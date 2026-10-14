@@ -33,10 +33,11 @@ export async function getBearerToken(): Promise<string> {
     const generation = tokenGeneration;
     tokenPromise = (async () => {
       const client = await getAuthClient();
-      const result = await client.token();
-      if (result.error?.status === 401 || (!result.error && !result.data?.token)) throw new SessionRequiredError('Sign in to continue.');
-      if (result.error || !result.data?.token) throw new Error('Authentication service is unavailable.');
-      const token = result.data.token;
+      // Neon injects the API JWT into session.token; /token can return that same cached session object.
+      const result = await client.getSession();
+      if (result.error?.status === 401 || (!result.error && !result.data?.session)) throw new SessionRequiredError('Sign in to continue.');
+      if (result.error || !result.data?.session?.token) throw new Error('Authentication service is unavailable.');
+      const token = result.data.session.token;
       const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))) as { exp: number };
       if (!Number.isFinite(payload.exp)) throw new Error('The authentication service returned an invalid session.');
       if (generation !== tokenGeneration) throw new Error('The active session changed.');

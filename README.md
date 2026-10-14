@@ -59,17 +59,18 @@ Register and verify the bootstrap email in the app. Admins authorize teammates i
 
 **[App](http://localhost:8080)** · **[Mailpit inbox](http://localhost:8025)** · **[API docs](http://localhost:8000/docs)**
 
-## Verify
+## Verify (Node 24+)
 
 ```sh
 npm --prefix frontend ci
+npm --prefix frontend test
 npm run build
 
 docker compose --profile test build tests
 docker compose --profile test run --rm tests
 ```
 
-[GitHub CI](.github/workflows/ci.yml) runs both checks. Tests use disposable PostgreSQL/pgvector, signed test JWTs and controlled provider/SMTP boundaries—never the live Neon database.
+[GitHub CI](.github/workflows/ci.yml) runs the session regression, build and backend suite. Backend tests use disposable PostgreSQL/pgvector, signed test JWTs and controlled provider/SMTP boundaries—never the live Neon database.
 
 ## Boundaries
 
