@@ -131,6 +131,27 @@ Only these explicit backend launchers load `.env` (preferred when present) or `.
 
 Vite proxies `/api` unchanged to port 8000. Production nginx preserves the same prefix, falls back to `index.html` for React deep links, and allows a 150-second proxy read timeout. No provider key is used in any `VITE_*` variable, client bundle or localStorage.
 
+## Frontend design and research
+
+The frontend is a restrained support workspace, not a landing page or a pre-styled dashboard template: a compact sidebar, URL-backed status switcher, responsive ticket cards, a ticket editor beside inspectable AI advice, and a document library/original reader. All counts, assignees, classifications and history come from the existing APIs; there are no invented analytics, confidence scores or nonfunctional controls.
+
+React 19, React Router and TanStack Query remain in place. **Base UI** provides accessible modal behavior for mobile navigation, workspace information and knowledge indexing; components are imported by subpath. **Lucide** supplies decorative icons, and **Manrope Variable** is self-hosted through Fontsource rather than requested from a font CDN. Shared colors, spacing, typography, form controls and feedback live in `frontend/src/styles.css`; page-specific CSS is colocated in `frontend/src/pages/`. `PageHeader` and `Avatar` keep repeated presentation consistent without a second state-management or component framework.
+
+The library choice was based on the application's existing architecture and the need for a custom visual identity, not a claim that one library is universally best:
+
+|Foundation|Decision|
+|---|---|
+|[Base UI](https://base-ui.com/react/overview/quick-start)|Chosen: unstyled, tree-shakable primitives with library-managed focus, dismissal and keyboard behavior; works with the existing ordinary CSS approach.|
+|[shadcn/ui](https://ui.shadcn.com/docs/changelog/2026-07-base-ui-default)|Its July 2026 default-foundation guidance supports choosing Base UI; this app uses that foundation directly, not copied shadcn presets or a Tailwind migration.|
+|[Radix Primitives](https://www.radix-ui.com/primitives/docs/overview/introduction)|A viable mature headless alternative. Adding both primitive systems would create unnecessary overlap.|
+|[React Aria](https://react-aria.adobe.com/)|A viable accessibility/internationalization-oriented alternative; the current routes and native form controls do not require replacing their existing interaction model.|
+|[Mantine](https://mantine.dev/styles/unstyled/)|Supports extensive components and headless use; those broader styling/provider APIs are unnecessary for this small custom workspace.|
+
+Research also consulted [Vercel React Best Practices](https://github.com/vercel-labs/agent-skills/blob/main/skills/react-best-practices/SKILL.md), [Vercel Web Interface Guidelines](https://github.com/vercel-labs/web-interface-guidelines/blob/main/command.md), [Anthropic frontend-design](https://github.com/anthropics/skills/blob/main/skills/frontend-design/SKILL.md), and [WCAG 2.2](https://www.w3.org/TR/WCAG22/). Applied guidance includes reusing query deduplication and captured form versions, deriving inexpensive UI state rather than adding effects, semantic controls, named icon buttons, visible keyboard focus, reduced motion, wrapping long content and useful empty/error states. No third-party skill scripts or global agent configuration were installed.
+
+Choose **Add document** in the knowledge base to open the indexing dialog. Closing it preserves entered values; pending indexing can finish while browsing, and duplicate/provider errors keep the form recoverable. Source bodies are still plain text, immutable after indexing, and never executed as HTML. The ordinary ticket/analysis/versioning contracts below are unchanged.
+
+
 ## API contract
 
 UUIDs are strings; timestamps are timezone-aware ISO-8601 UTC, normalized even when a database session uses another timezone. Request bodies reject extra properties; standard FastAPI field validation stays `422`.
@@ -210,6 +231,17 @@ Production nginx browser proof additionally passed original-source disclosure, a
 Actual `docker compose stop api web` followed by `docker compose up -d --force-recreate --wait api web` replaced **both container IDs**. Fresh API snapshots of all **nine tickets**, their history/assignments/status/saved analyses/citations, and all **six policies** matched exactly without reseeding; refreshed nginx detail routes retained the saved states. Browser verification tabs were closed and the disposable `db-test` service stopped. The application API/web containers remain running on loopback.
 
 The prior Neon login and Docker verification blockers are resolved. Authenticated `neon config plan` verified the requested organization/project/production branch with PostgreSQL only, no changes/conflicts/warnings. `neon deploy` exited zero and pulled three variables; database-specific connection lookup preserved the explicitly supplied `test-db` target instead of the SDK's default `neondb`. Initial Docker registry DNS timeouts were recovered by direct base-image pulls and successful rebuilds. No remaining acceptance blocker is known for the approved **local, unauthenticated demo**. Public hosting/authentication remains a separate, unrequested scope. The live database was never reset/truncated/dropped or substituted with SQLite.
+
+### Frontend redesign receipt
+
+The redesigned frontend passed root `npm run build` (`tsc -b && vite build`, Vite 7.3.7: 2154 modules, build completed in 1.60s). The production Node 24/nginx web image also built and `docker compose up -d --no-deps --wait web` recreated a healthy web container; the API, Neon connections and backend contracts were not changed. An initial TypeScript mismatch on a Base UI trigger ref was corrected to `HTMLButtonElement`; the final build passes without a cast or suppressed error. npm still emits its install-script policy advisory; it did not prevent either build.
+
+Actual browser/nginx checks passed create/validation/first-error focus, assignment, persisted status editing, dirty-analysis gating, a real free-model password analysis with a 30-minute Password reset citation, original-source plain-text disclosure and actual clipboard copy with its numbered Sources footer. A controlled **browser-intercepted 503**, not an actual provider outage, retained the preceding real draft and saved run. Two real UI tabs produced a losing `409`, kept unsaved input and the winning save, then explicit reload showed stale advice with Copy disabled.
+
+An additional real free-model security analysis classified `security`/`urgent`. Explicit **Escalate ticket** persisted `escalated`, version 2 and history versions 1/2; reload preserved the state and stale-copy restriction. The previously saved unsupported-SAML result still rendered no draft or Copy action. Knowledge browsing/title-filter empty state, modal Escape/focus return, close/reopen value retention, real Liquid indexing and a duplicate `409` with unchanged document count/form body were exercised. Verification added two synthetic tickets and one clearly fictional handoff document to the existing demo corpus; no existing cloud data was reset or deleted.
+
+All four routes were checked with **loaded data** at both **390px and 320px** without page-level horizontal overflow. Mobile navigation trapped keyboard focus, Escape returned to its trigger, reduced-motion emulation produced `0s` modal transitions, and nginx deep-link refresh/not-found handling passed. Live `/api/health` returned `{"status":"ok","ai_configured":true}`. Screenshots of the redesigned desktop/mobile surfaces were captured. These are scoped browser checks, not a claim of a complete WCAG certification; the previously recorded guarded backend suite was not rerun for this frontend-only change.
+
 
 ## Reference contracts
 

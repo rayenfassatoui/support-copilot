@@ -45,19 +45,19 @@ export function TicketFormFields({ values, onChange, agents, errors, disabled = 
       <div className="field">
         <label htmlFor="ticket-title">Title <span className="required-text">(required)</span></label>
         <input id="ticket-title" name="title" value={values.title} onChange={(event) => onChange('title', event.target.value)} required minLength={3} maxLength={200}
-          aria-invalid={Boolean(errors.title)} aria-describedby={errors.title ? 'ticket-title-error' : undefined} />
+          placeholder="A short, specific summary…" aria-invalid={Boolean(errors.title)} aria-describedby={errors.title ? 'ticket-title-error' : undefined} />
         <FieldError id="ticket-title-error" message={errors.title} />
       </div>
       <div className="field">
         <label htmlFor="ticket-email">Customer email <span className="required-text">(required)</span></label>
-        <input id="ticket-email" name="customer_email" type="email" autoComplete="email" value={values.customer_email} onChange={(event) => onChange('customer_email', event.target.value)} required
-          aria-invalid={Boolean(errors.customer_email)} aria-describedby={errors.customer_email ? 'ticket-email-error' : undefined} />
+        <input id="ticket-email" name="customer_email" type="email" autoComplete="email" spellCheck={false} value={values.customer_email} onChange={(event) => onChange('customer_email', event.target.value)} required
+          placeholder="customer@example.com" aria-invalid={Boolean(errors.customer_email)} aria-describedby={errors.customer_email ? 'ticket-email-error' : undefined} />
         <FieldError id="ticket-email-error" message={errors.customer_email} />
       </div>
       <div className="field">
         <label htmlFor="ticket-description">Description <span className="required-text">(required)</span></label>
         <textarea id="ticket-description" name="description" rows={8} value={values.description} onChange={(event) => onChange('description', event.target.value)} required minLength={10} maxLength={10_000}
-          aria-invalid={Boolean(errors.description)} aria-describedby={`ticket-description-help${errors.description ? ' ticket-description-error' : ''}`} />
+          placeholder="Describe the issue and what the customer needs…" aria-invalid={Boolean(errors.description)} aria-describedby={`ticket-description-help${errors.description ? ' ticket-description-error' : ''}`} />
         <p className="field-help" id="ticket-description-help">10–10,000 characters. Use synthetic customer details for this demo; do not include passwords, API keys, or sensitive data.</p>
         <FieldError id="ticket-description-error" message={errors.description} />
       </div>

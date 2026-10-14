@@ -4,6 +4,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router-dom';
 import { App } from './App';
 import { queryClient } from './query';
+import '@fontsource-variable/manrope';
 import './styles.css';
 
 const root = document.getElementById('root');

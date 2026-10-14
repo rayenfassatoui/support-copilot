@@ -2,16 +2,20 @@ import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
+import { ArrowLeft, Clock3, Mail, PencilLine, RotateCcw, Save, Undo2, UserRound } from 'lucide-react';
 import { ApiError, api } from '../api';
 import { formatDate } from '../format';
 import { invalidateTicket, queryKeys } from '../query';
 import type { FieldErrors, Ticket, TicketPatch } from '../types';
+import { Avatar } from '../components/Avatar';
 import { StatusBadge } from '../components/Badges';
 import { CopilotPanel } from '../components/CopilotPanel';
 import { ErrorNotice, Loading } from '../components/Feedback';
+import { PageHeader } from '../components/PageHeader';
 import { TicketFormFields, ticketFormValues, validateTicketForm } from '../components/TicketFormFields';
 import type { TicketFormValues } from '../components/TicketFormFields';
 import { TicketTimeline } from '../components/TicketTimeline';
+import './detail.css';
 
 interface TicketEditor {
   values: TicketFormValues;
@@ -23,7 +27,12 @@ const editableFields: (keyof TicketFormValues)[] = ['title', 'customer_email', '
 
 export function TicketDetailPage() {
   const { id } = useParams();
-  if (!id) return <div className="panel"><h1>Ticket not found</h1><Link to="/tickets">Back to tickets</Link></div>;
+  if (!id) return (
+    <div className="ticket-workbench">
+      <Link className="back-link" to="/tickets"><ArrowLeft size={16} aria-hidden="true" />Back to tickets</Link>
+      <PageHeader title="Ticket not found" description="Choose a ticket from your queue to open its workspace." />
+    </div>
+  );
   return <TicketWorkspace key={id} id={id} />;
 }
 
@@ -165,36 +174,98 @@ function TicketWorkspace({ id }: { id: string }) {
   }
 
   if (ticket.isPending) return <Loading>Loading ticket…</Loading>;
-  if (!ticket.data) return <><Link className="back-link" to="/tickets">← Back to tickets</Link><h1>{ticket.error instanceof ApiError && ticket.error.status === 404 ? 'Ticket not found' : 'Ticket unavailable'}</h1><ErrorNotice error={ticket.error} onRetry={() => { void ticket.refetch(); }} retrying={ticket.isFetching} /></>;
+  if (!ticket.data) return (
+    <div className="ticket-workbench">
+      <Link className="back-link" to="/tickets"><ArrowLeft size={16} aria-hidden="true" />Back to tickets</Link>
+      <PageHeader title={ticket.error instanceof ApiError && ticket.error.status === 404 ? 'Ticket not found' : 'Ticket unavailable'} description="Your ticket queue is still available. Try loading this ticket again." />
+      <ErrorNotice error={ticket.error} onRetry={() => { void ticket.refetch(); }} retrying={ticket.isFetching} />
+    </div>
+  );
   if (!editor) return <Loading>Preparing ticket form…</Loading>;
   const savedTicket = ticket.data;
 
   return (
-    <>
-      <Link className="back-link" to="/tickets">← Back to tickets</Link>
-      <div className="page-heading detail-heading"><div><p className="eyebrow">Ticket details</p><h1>{savedTicket.title}</h1><p className="metadata">Created <time dateTime={savedTicket.created_at}>{formatDate(savedTicket.created_at)}</time> · Updated <time dateTime={savedTicket.updated_at}>{formatDate(savedTicket.updated_at)}</time></p></div><StatusBadge status={savedTicket.status} /></div>
+    <div className="ticket-workbench">
+      <div className="ticket-workbench-nav">
+        <Link className="back-link" to="/tickets"><ArrowLeft size={16} aria-hidden="true" />Back to tickets</Link>
+        <span className="ticket-reference"><span>Ticket reference</span><code>{savedTicket.id}</code></span>
+      </div>
+
+      <header className="ticket-context-header">
+        <PageHeader
+          eyebrow="Ticket workspace"
+          title={savedTicket.title}
+          description={<>Updated <time dateTime={savedTicket.updated_at}>{formatDate(savedTicket.updated_at)}</time><span className="ticket-heading-separator" aria-hidden="true">·</span>Saved version {savedTicket.version}</>}
+          actions={<StatusBadge status={savedTicket.status} />}
+        />
+        <dl className="ticket-context-grid">
+          <div>
+            <dt>Customer</dt>
+            <dd><Mail size={16} aria-hidden="true" /><span>{savedTicket.customer_email}</span></dd>
+          </div>
+          <div>
+            <dt>Assigned agent</dt>
+            <dd>
+              {savedTicket.assignee ? <Avatar name={savedTicket.assignee.name} /> : <UserRound size={16} aria-hidden="true" />}
+              <span>{savedTicket.assignee?.name ?? (savedTicket.assignee_id ? 'Unknown agent' : 'Unassigned')}</span>
+            </dd>
+          </div>
+          <div>
+            <dt>Created</dt>
+            <dd><Clock3 size={16} aria-hidden="true" /><time dateTime={savedTicket.created_at}>{formatDate(savedTicket.created_at)}</time></dd>
+          </div>
+        </dl>
+      </header>
+
       <ErrorNotice error={ticket.error} onRetry={() => { void ticket.refetch(); }} retrying={ticket.isFetching} />
       {notice && <p className="notice notice-success" role="status">{notice}</p>}
-      {serverChanged && <div className="notice notice-warning" role="status"><strong>A newer saved ticket version is available.</strong><p>Your form is still on version {editor.formVersion}; the latest saved version is {savedTicket.version}. Your local inputs have not been replaced. Reload latest before continuing.</p><button type="button" className="button button-secondary button-small" onClick={() => { void reloadLatest(); }} disabled={busy}>Reload latest{dirty ? ' (discard edits)' : ''}</button></div>}
+      {serverChanged && (
+        <div className="notice notice-warning ticket-conflict-notice" role="status">
+          <strong>A newer saved ticket version is available.</strong>
+          <p>Your form is still on version {editor.formVersion}; the latest saved version is {savedTicket.version}. Your local inputs have not been replaced. Reload latest before continuing.</p>
+          <button type="button" className="button button-secondary button-small" onClick={() => { void reloadLatest(); }} disabled={busy}>
+            <RotateCcw size={15} aria-hidden="true" />{reloading ? 'Reloading…' : `Reload latest${dirty ? ' (discard edits)' : ''}`}
+          </button>
+        </div>
+      )}
+
       <div className="ticket-detail-layout">
-        <div className="panel-stack">
-          <section className="panel" aria-labelledby="ticket-edit-heading">
-            <div className="panel-heading"><h2 id="ticket-edit-heading">Edit ticket</h2><span className="badge badge-neutral">Form version {editor.formVersion}</span></div>
-            {dirty && <p className="notice notice-warning" role="status">Unsaved changes — save or discard before analyzing.</p>}
+        <div className="panel-stack ticket-primary-column">
+          <section className="panel ticket-editor" aria-labelledby="ticket-edit-heading">
+            <div className="ticket-section-header">
+              <div>
+                <h2 id="ticket-edit-heading"><PencilLine size={18} aria-hidden="true" />Edit ticket</h2>
+                <p className="field-help">Customer request, ownership, and status.</p>
+              </div>
+              <span className="ticket-form-version">Form version {editor.formVersion}</span>
+            </div>
+            {dirty && (
+              <div className="ticket-unsaved-state" role="status">
+                <span className="ticket-unsaved-dot" aria-hidden="true" />
+                <p><strong>Unsaved changes</strong><span>Save or discard your edits before analyzing.</span></p>
+              </div>
+            )}
             <ErrorNotice error={agents.error} onRetry={() => { void agents.refetch(); }} retrying={agents.isFetching} />
             <ErrorNotice error={save.error}>
-              {save.error instanceof ApiError && save.error.code === 'ticket_conflict' && <><p>Your unsaved edits are preserved. Reload latest replaces them with the saved ticket; it does not save your local changes.</p><button type="button" className="button button-secondary button-small" onClick={() => { void reloadLatest(); }} disabled={busy}>{reloading ? 'Reloading…' : 'Reload latest (discard edits)'}</button></>}
+              {save.error instanceof ApiError && save.error.code === 'ticket_conflict' && <>
+                <p>Your unsaved edits are preserved. Reload latest replaces them with the saved ticket; it does not save your local changes.</p>
+                <button type="button" className="button button-secondary button-small" onClick={() => { void reloadLatest(); }} disabled={busy}><RotateCcw size={15} aria-hidden="true" />{reloading ? 'Reloading…' : 'Reload latest (discard edits)'}</button>
+              </>}
             </ErrorNotice>
             {Object.keys(errors).length > 0 && !save.error && <div className="notice notice-error" role="alert">Please check the highlighted fields.</div>}
             <form onSubmit={submit} noValidate aria-busy={save.isPending || reloading || escalate.isPending}>
               <TicketFormFields values={editor.values} onChange={changeField} agents={agents.data ?? []} errors={errors} disabled={busy} editing assigneesUnavailable={agents.isPending || agents.isError} />
-              <div className="form-actions"><button type="submit" className="button" disabled={!dirty || busy}>{save.isPending ? 'Saving…' : 'Save changes'}</button><button type="button" className="button button-secondary" onClick={discardEdits} disabled={!dirty || busy}>Discard edits</button><button type="button" className="button button-quiet" onClick={() => { void reloadLatest(); }} disabled={busy}>{reloading ? 'Reloading…' : dirty ? 'Reload latest (discard edits)' : 'Reload latest'}</button></div>
+              <div className="form-actions ticket-editor-actions">
+                <button type="submit" className="button" disabled={!dirty || busy}><Save size={16} aria-hidden="true" />{save.isPending ? 'Saving…' : 'Save changes'}</button>
+                <button type="button" className="button button-secondary" onClick={discardEdits} disabled={!dirty || busy}><Undo2 size={16} aria-hidden="true" />Discard edits</button>
+                <button type="button" className="button button-quiet ticket-reload-button" onClick={() => { void reloadLatest(); }} disabled={busy}><RotateCcw size={15} aria-hidden="true" />{reloading ? 'Reloading…' : dirty ? 'Reload latest (discard edits)' : 'Reload latest'}</button>
+              </div>
             </form>
           </section>
           <TicketTimeline ticketId={id} agents={agents.data ?? (savedTicket.assignee ? [savedTicket.assignee] : [])} />
         </div>
         <CopilotPanel run={savedTicket.latest_analysis} stale={savedTicket.analysis_stale} blocked={analysisBlocked} blockedReason={blockedReason} busy={busy} analyzing={analyze.isPending} escalating={escalate.isPending} onAnalyze={analyzeSavedTicket} onEscalate={escalateSavedTicket} analyzeError={analyze.error} escalateError={escalate.error} status={savedTicket.status} onReload={() => { void reloadLatest(); }} />
       </div>
-    </>
+    </div>
   );
 }
