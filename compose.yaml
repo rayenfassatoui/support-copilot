@@ -1,0 +1,56 @@
+services:
+  api:
+    build:
+      context: ./backend
+      target: runtime
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-}
+      DATABASE_URL_UNPOOLED: ${DATABASE_URL_UNPOOLED:-}
+      MIGRATION_DATABASE_URL: ${MIGRATION_DATABASE_URL:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_CHAT_MODEL: ${OPENROUTER_CHAT_MODEL:-nvidia/nemotron-3-ultra-550b-a55b:free}
+      OPENROUTER_EMBEDDING_MODEL: ${OPENROUTER_EMBEDDING_MODEL:-liquid/lfm-2.5-embedding-350m:free}
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/openapi.json', timeout=5)"]
+      interval: 15s
+      timeout: 6s
+      retries: 5
+      start_period: 20s
+  web:
+    build: ./frontend
+    ports:
+      - "127.0.0.1:8080:80"
+    depends_on:
+      api:
+        condition: service_healthy
+  db-test:
+    profiles: [test]
+    image: pgvector/pgvector:0.8.7-pg17-bookworm
+    environment:
+      POSTGRES_DB: copilot_test
+      POSTGRES_USER: copilot_test
+      POSTGRES_PASSWORD: copilot_test
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U copilot_test -d copilot_test"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+  tests:
+    profiles: [test]
+    build:
+      context: ./backend
+      target: test
+    depends_on:
+      db-test:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://copilot_test:copilot_test@db-test:5432/copilot_test
+      MIGRATION_DATABASE_URL: postgresql+psycopg://copilot_test:copilot_test@db-test:5432/copilot_test
+      OPENROUTER_API_KEY: isolated-test-key
+      OPENROUTER_CHAT_MODEL: nvidia/nemotron-3-ultra-550b-a55b:free
+      OPENROUTER_EMBEDDING_MODEL: liquid/lfm-2.5-embedding-350m:free
+    entrypoint: ["sh", "-c", "python -m tests.guard_database && alembic upgrade head && pytest -q"]
