@@ -9,6 +9,7 @@ from app.models import Agent, CopilotRun, Member, Ticket, TicketEvent
 from app.schemas import ActorRead, AgentRead, AnalysisSummary, MemberRead, TicketCreate, TicketEventRead, TicketListItem, TicketPage, TicketPatch, TicketRead, TicketSearch
 from app.services.copilot import run_read
 from app.services.sla import snapshot_deadlines, ticket_sla
+from app.services.automation import apply_assignment
 
 EDITABLE = ("title", "description", "customer_email", "status", "assignee_id", "priority")
 
@@ -62,6 +63,7 @@ def create_ticket(sessions: sessionmaker[Session], payload: TicketCreate, actor:
         now = datetime.now(timezone.utc)
         ticket = Ticket(**payload.model_dump(), status="open", version=1, created_at=now, updated_at=now)
         snapshot_deadlines(session, ticket)
+        apply_assignment(session, ticket)
         session.add(ticket)
         session.flush()
         changes = {key: {"old": None, "new": json_value(getattr(ticket, key))} for key in EDITABLE}

@@ -145,6 +145,9 @@ export interface KnowledgeSummary {
   source_url: string | null;
   created_at: string;
   chunk_count: number;
+  family_id: string;
+  version: number;
+  is_current: boolean;
 }
 
 export interface KnowledgeDocument extends KnowledgeSummary {
@@ -175,7 +178,8 @@ export interface TicketMessage {
   ticket_id: string;
   kind: MessageKind;
   body: string;
-  author: { id: string; name: string };
+  author: { id: string; name: string } | null;
+  sender_email: string | null;
   source_run_id: string | null;
   ticket_version: number;
   version: number;

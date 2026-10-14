@@ -10,3 +10,5 @@ pgvector>=0.4,<1
 httpx>=0.28,<1
 tokenizers>=0.22,<0.23
 PyJWT[crypto]>=2.10,<3
+pypdf>=6,<7
+python-multipart>=0.0.20,<1

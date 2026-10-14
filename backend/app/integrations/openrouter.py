@@ -1,7 +1,9 @@
 from array import array
 from math import isfinite
+from textwrap import wrap
 import logging
 import json
+import re
 
 import httpx
 from fastapi import Request
@@ -15,6 +17,15 @@ from app.tokenization import EMBEDDING_TOKEN_LIMIT, token_count
 
 logger = logging.getLogger("copilot")
 BASE_URL = "https://openrouter.ai/api/v1"
+
+
+def _unique_json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("Duplicate JSON property.")
+        result[key] = value
+    return result
 
 
 class OpenRouterClient:
@@ -95,13 +106,35 @@ class OpenRouterClient:
         return vectors
 
     def analyze(self, ticket: TicketContext, chunks: list[RetrievedChunk]) -> ModelAnalysis:
+        schema = ModelAnalysis.model_json_schema()
+        # A source-keyed object permits one quote per source. Enumerated excerpts
+        # keep the provider from inventing or truncating quoted text.
+        schema["properties"]["citations"] = {
+            "type": "object",
+            "description": "Map each cited source UUID to one exact supporting excerpt.",
+            "properties": {str(chunk.id): {"type": "string", "enum": list(dict.fromkeys(
+                excerpt
+                for sentence in re.split(r"(?<=[.!?])\s+|(?<=[。！？])", " ".join(chunk.text.split()))
+                for excerpt in wrap(sentence, width=600, break_on_hyphens=False)
+            ))} for chunk in chunks},
+            "additionalProperties": False,
+        }
         payload = self._post("chat/completions", {
             "model": self.settings.openrouter_chat_model,
             "stream": False, "temperature": 0.2, "max_tokens": 1800,
             "provider": {"only": ["nvidia"], "require_parameters": True, "allow_fallbacks": False},
             "reasoning": {"enabled": False, "exclude": True},
+            "tools": [{
+                "type": "function",
+                "function": {
+                    "name": "submit_support_analysis",
+                    "description": "Return evidence-backed advice for human review. This does not send email or change a ticket.",
+                    "parameters": schema,
+                },
+            }],
+            "tool_choice": {"type": "function", "function": {"name": "submit_support_analysis"}},
             "messages": [
-                {"role": "system", "content": SYSTEM_POLICY + "\nJSON Schema:\n" + json.dumps(ModelAnalysis.model_json_schema())},
+                {"role": "system", "content": SYSTEM_POLICY},
                 {"role": "user", "content": json.dumps({
                     "ticket": {"title": ticket.title, "description": ticket.description},
                     "sources": [{"id": str(chunk.id), "title": chunk.title, "text": chunk.text} for chunk in chunks],
@@ -121,11 +154,18 @@ class OpenRouterClient:
             raise DomainError("ai_invalid_response")
         if message.get("refusal"):
             raise DomainError("ai_refused")
-        content = message.get("content")
-        if choice.get("finish_reason") != "stop" or not isinstance(content, str) or not content.strip():
+        calls = message.get("tool_calls")
+        if choice.get("finish_reason") != "tool_calls" or not isinstance(calls, list) or len(calls) != 1:
+            raise DomainError("ai_invalid_response")
+        call = calls[0]
+        function = call.get("function") if isinstance(call, dict) and call.get("type") == "function" else None
+        if not isinstance(function, dict) or function.get("name") != "submit_support_analysis":
+            raise DomainError("ai_invalid_response")
+        content = function.get("arguments")
+        if not isinstance(content, str) or not content.strip():
             raise DomainError("ai_invalid_response")
         try:
-            result = ModelAnalysis.model_validate_json(content)
+            result = ModelAnalysis.model_validate(json.loads(content, object_pairs_hook=_unique_json_object))
         except (ValidationError, ValueError):
             raise DomainError("ai_invalid_response") from None
         validate_citations(result, chunks)

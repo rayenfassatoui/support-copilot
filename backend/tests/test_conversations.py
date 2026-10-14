@@ -237,3 +237,20 @@ def test_invalid_message_does_not_mutate_ticket(client, ticket_factory, payload)
     assert response.status_code == 422
     assert client.get(f"/api/tickets/{ticket['id']}").json() == ticket
     assert client.get(f"/api/tickets/{ticket['id']}/messages").json() == []
+
+
+def test_only_current_unsent_drafts_can_be_discarded(client, ticket_factory, message_factory):
+    ticket = ticket_factory()
+    draft = message_factory(ticket)
+    path = f"/api/tickets/{ticket['id']}/messages/{draft['id']}"
+    saved = client.patch(path, json={"version": draft["version"], "ticket_version": ticket["version"], "body": "Newer saved text"}).json()
+    stale = client.request("DELETE", path, json={"version": draft["version"], "ticket_version": ticket["version"]})
+    assert stale.status_code == 409
+    assert client.get(f"/api/tickets/{ticket['id']}/messages").json()[0]["body"] == "Newer saved text"
+    assert client.request("DELETE", path, json={"version": saved["version"], "ticket_version": ticket["version"]}).status_code == 204
+    assert client.get(f"/api/tickets/{ticket['id']}/messages").json() == []
+    approved = approve(client, ticket, message_factory(ticket))
+    current = client.get(f"/api/tickets/{ticket['id']}").json()
+    protected = client.request("DELETE", f"/api/tickets/{ticket['id']}/messages/{approved['id']}", json={"version": approved["version"], "ticket_version": current["version"]})
+    assert protected.status_code == 409
+    assert client.get(f"/api/tickets/{ticket['id']}/messages").json() == [approved]

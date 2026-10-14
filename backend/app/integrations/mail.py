@@ -16,6 +16,8 @@ class OutboundMail:
     subject: str
     body: str
     message_id: str
+    in_reply_to: str | None = None
+    references: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -39,6 +41,10 @@ class SMTPMailer:
         message["To"] = mail.recipient
         message["Subject"] = mail.subject
         message["Message-ID"] = mail.message_id
+        if mail.in_reply_to:
+            message["In-Reply-To"] = mail.in_reply_to
+        if mail.references:
+            message["References"] = " ".join(mail.references)
         message.set_content(mail.body)
         connection = None
         try:

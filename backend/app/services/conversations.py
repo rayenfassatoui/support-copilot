@@ -7,15 +7,15 @@ from sqlalchemy.orm import Session, aliased, sessionmaker
 
 from app.errors import DomainError
 from app.integrations.mail import OutboundMail, SMTPMailer
-from app.models import CopilotRun, Member, Ticket, TicketEvent, TicketMessage
+from app.models import CopilotRun, CustomerFeedback, Member, Ticket, TicketEvent, TicketMessage
 from app.schemas import ActorRead, MemberRead, MessageAction, MessageCreate, MessagePatch, MessageRead
 from app.services.tickets import get_ticket
 
 
-def message_fields(message: TicketMessage, author: Member, approver: Member | None) -> MessageRead:
+def message_fields(message: TicketMessage, author: Member | None, approver: Member | None) -> MessageRead:
     return MessageRead(
         id=message.id, ticket_id=message.ticket_id, kind=message.kind, body=message.body,
-        author=ActorRead.model_validate(author), source_run_id=message.source_run_id,
+        author=ActorRead.model_validate(author) if author else None, sender_email=message.sender_email, source_run_id=message.source_run_id,
         ticket_version=message.ticket_version, version=message.version, delivery_status=message.delivery_status,
         approved_by=ActorRead.model_validate(approver) if approver else None,
         approved_at=message.approved_at, recipient_email=message.recipient_email, subject=message.subject,
@@ -25,7 +25,7 @@ def message_fields(message: TicketMessage, author: Member, approver: Member | No
 
 
 def message_read(session: Session, message: TicketMessage) -> MessageRead:
-    author = session.get(Member, message.author_id)
+    author = session.get(Member, message.author_id) if message.author_id else None
     approver = session.get(Member, message.approved_by_id) if message.approved_by_id else None
     return message_fields(message, author, approver)
 
@@ -36,7 +36,7 @@ def list_messages(sessions: sessionmaker[Session], ticket_id: UUID) -> list[Mess
         get_ticket(session, ticket_id)
         rows = session.execute(
             select(TicketMessage, Member, approver)
-            .join(Member, Member.id == TicketMessage.author_id)
+            .outerjoin(Member, Member.id == TicketMessage.author_id)
             .outerjoin(approver, approver.id == TicketMessage.approved_by_id)
             .where(TicketMessage.ticket_id == ticket_id)
             .order_by(TicketMessage.created_at, TicketMessage.id)
@@ -114,6 +114,21 @@ def patch_message(sessions: sessionmaker[Session], ticket_id: UUID, message_id: 
         return message_read(session, message)
 
 
+def delete_message(sessions: sessionmaker[Session], ticket_id: UUID, message_id: UUID, payload: MessageAction) -> None:
+    with sessions.begin() as session:
+        ticket = get_ticket(session, ticket_id, lock=True)
+        message = locked_message(session, ticket_id, message_id)
+        check_versions(ticket, message, payload)
+        if message.kind != "reply" or message.delivery_status != "draft":
+            raise DomainError("invalid_message_state")
+        survey = session.scalar(select(CustomerFeedback).where(CustomerFeedback.message_id == message.id).with_for_update())
+        if survey is not None and survey.submitted_at is None:
+            survey.expires_at = datetime.now(timezone.utc)
+            survey.message_id = None
+            session.flush()
+        session.delete(message)
+
+
 def approve_message(sessions: sessionmaker[Session], ticket_id: UUID, message_id: UUID, payload: MessageAction, actor: MemberRead) -> MessageRead:
     with sessions.begin() as session:
         ticket = get_ticket(session, ticket_id, lock=True)
@@ -130,6 +145,13 @@ def approve_message(sessions: sessionmaker[Session], ticket_id: UUID, message_id
         message.updated_at = now
         message.recipient_email = ticket.customer_email
         message.subject = "Re: " + " ".join(ticket.title.split())
+        parent = session.scalar(select(TicketMessage).where(
+            TicketMessage.ticket_id == ticket.id, TicketMessage.smtp_message_id.is_not(None),
+        ).order_by(TicketMessage.created_at.desc(), TicketMessage.id.desc()).limit(1))
+        if parent:
+            message.in_reply_to = parent.smtp_message_id
+            references = list(dict.fromkeys([*(parent.references or []), parent.smtp_message_id]))
+            message.references = references if len(references) <= 30 else [references[0], *references[-29:]]
         message.version += 1
         record_event(session, ticket, message, actor, "reply_approved")
         session.flush()
@@ -156,7 +178,8 @@ def send_message(sessions: sessionmaker[Session], ticket_id: UUID, message_id: U
         message.delivery_error = None
         message.version += 1
         message.updated_at = datetime.now(timezone.utc)
-        outgoing = OutboundMail(message.recipient_email, message.subject, message.body, message.smtp_message_id)
+        outgoing = OutboundMail(message.recipient_email, message.subject, message.body, message.smtp_message_id,
+                                message.in_reply_to, tuple(message.references or []))
     # Neither ticket nor message is locked over the SMTP call.
     outcome = mailer.send(outgoing)
     with sessions.begin() as session:

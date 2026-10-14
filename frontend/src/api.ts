@@ -41,35 +41,37 @@ function responseError(status: number, payload: unknown): ApiError {
     : 'The server could not complete this request. Reload to confirm the latest saved state.');
 }
 
-async function request<T>(path: string, options: { method?: string; body?: unknown; signal?: AbortSignal } = {}): Promise<T> {
-  let token: string;
-  try {
-    token = await getBearerToken();
-  } catch (error) {
-    if (error instanceof SessionRequiredError) {
-      clearAuthToken();
-      window.dispatchEvent(new Event('copilot-session-expired'));
-      throw new ApiError(401, 'authentication_required', error.message);
+export async function request<T>(path: string, options: { method?: string; body?: unknown; signal?: AbortSignal; anonymous?: boolean } = {}): Promise<T> {
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (!options.anonymous) {
+    try {
+      headers.Authorization = `Bearer ${await getBearerToken()}`;
+    } catch (error) {
+      if (error instanceof SessionRequiredError) {
+        clearAuthToken();
+        window.dispatchEvent(new Event('copilot-session-expired'));
+        throw new ApiError(401, 'authentication_required', error.message);
+      }
+      throw new ApiError(503, 'auth_unavailable', error instanceof Error ? error.message : 'Unable to authenticate this request.');
     }
-    throw new ApiError(503, 'auth_unavailable', error instanceof Error ? error.message : 'Unable to authenticate this request.');
   }
+  const multipart = options.body instanceof FormData;
+  if (options.body !== undefined && !multipart) headers['Content-Type'] = 'application/json';
   let response: Response;
   try {
     response = await fetch(`/api${path}`, {
       method: options.method ?? 'GET',
       credentials: 'same-origin',
       signal: options.signal,
-      headers: options.body === undefined
-        ? { Accept: 'application/json', Authorization: `Bearer ${token}` }
-        : { Accept: 'application/json', 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      headers,
+      body: options.body === undefined ? undefined : multipart ? options.body as FormData : JSON.stringify(options.body),
     });
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') throw error;
     throw new ApiError(0, 'network_unavailable', 'Cannot reach the server. Check that the API is running, then reload to confirm the latest saved state.');
   }
 
-  if (response.status === 401) {
+  if (response.status === 401 && !options.anonymous) {
     clearAuthToken();
     window.dispatchEvent(new Event('copilot-session-expired'));
   }
@@ -117,6 +119,7 @@ export const api = {
   messages: (id: string, signal?: AbortSignal) => request<TicketMessage[]>(`/tickets/${encodeURIComponent(id)}/messages`, { signal }),
   createMessage: (id: string, body: { kind: MessageKind; body: string; ticket_version: number; source_run_id?: string }) => request<TicketMessage>(`/tickets/${encodeURIComponent(id)}/messages`, { method: 'POST', body }),
   patchMessage: (id: string, messageId: string, body: { body: string; version: number; ticket_version: number }) => request<TicketMessage>(`/tickets/${encodeURIComponent(id)}/messages/${encodeURIComponent(messageId)}`, { method: 'PATCH', body }),
+  deleteMessage: (id: string, messageId: string, body: { version: number; ticket_version: number }) => request<void>(`/tickets/${encodeURIComponent(id)}/messages/${encodeURIComponent(messageId)}`, { method: 'DELETE', body }),
   approveMessage: (id: string, messageId: string, body: { version: number; ticket_version: number }) => request<TicketMessage>(`/tickets/${encodeURIComponent(id)}/messages/${encodeURIComponent(messageId)}/approve`, { method: 'POST', body }),
   sendMessage: (id: string, messageId: string, body: { version: number; ticket_version: number }) => request<TicketMessage>(`/tickets/${encodeURIComponent(id)}/messages/${encodeURIComponent(messageId)}/send`, { method: 'POST', body }),
 };

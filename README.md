@@ -1,79 +1,59 @@
 # Support Copilot
 
-A human-reviewed support workspace. **Single workspace, local hosting, synthetic data only.**
+A support workspace with human-approved replies.
 
-| Area | Implemented |
+| Area | What works |
 | --- | --- |
-| Access | Neon Auth, verified email, Agent/Admin roles, immediate member suspension |
-| Inbox | Search, assignment/priority/intent/SLA filters, sorting, private saved views |
-| Conversations | Customer messages, private notes, editable drafts, explicit approval and sending |
-| Copilot | Source-backed drafts, intent/priority suggestions, abstention and escalation advice |
-| Operations | Configurable 24/7 SLA targets, actor history, version-conflict protection |
-| Knowledge | Text/Markdown indexing, duplicate detection, inspectable immutable sources |
-
-## Architecture
+| Mail | IMAP → tickets, threaded SMTP replies, deduplication |
+| Knowledge + AI | PDF/URL/text imports, document revisions, native-token chunks ≤512, source-backed drafts |
+| Agent workspace | Split inbox, Cmd/Ctrl+K, J/K navigation, N/R shortcuts, server-side draft autosave |
+| Automation | Ordered assignment rules, business hours/holidays, advance in-app SLA alerts |
+| Quality | First-response/resolution times, SLA compliance, single-use customer surveys |
 
 ```mermaid
 flowchart LR
-    UI["React · TypeScript · Base UI"] <-->|Sign-in| AUTH["Neon Auth"]
-    UI -->|Bearer JWT| WEB["nginx"]
-    WEB --> API["FastAPI · SQLAlchemy · Psycopg"]
+    C[Customer] -->|Email| M[Support mailbox]
+    M -->|IMAP sync| API[FastAPI · Psycopg]
+    UI[React · Base UI] <-->|Tickets / human review| API
+    UI <-->|Sign-in| AUTH[Neon Auth]
     API -->|Verify JWT| AUTH
-    API -->|Pooled| DB[("Neon Postgres · pgvector")]
-    MIG["Alembic"] -->|Direct| DB
-    API --> AI["OpenRouter · Liquid + Nemotron"]
-    API --> SMTP["Mailpit · local SMTP inbox"]
+    API <-->|Pooled| DB[(Neon Postgres · pgvector)]
+    API <--> AI[OpenRouter · Liquid + Nemotron]
+    API -->|Approved replies only| SMTP
+    SMTP --> C
 ```
-
-Docker runs web, API and Mailpit. App data uses `test-db`; managed Auth uses `neondb`. Database, AI and SMTP credentials stay server-side.
-
-## Review workflow
-
-```mermaid
-flowchart LR
-    T["Ticket + customer history"] --> R["Retrieve sources"] --> AI["Validate AI result"]
-    AI --> G{"Grounded?"}
-    G -->|Yes| D["Edit draft"]
-    G -->|No| H["Human-written reply"] --> D
-    D --> A["Approve exact content"] --> S["Confirm send"] --> M["SMTP attempt · Mailpit"]
-    M --> F["Persist sent / failed / unknown"]
-```
-
-Notes never reach AI or email. Uncertain delivery blocks retries; SMTP acceptance is not proof of external inbox delivery. SLA starts at ticket creation; policy edits affect new tickets and explicit priority changes. Reopening keeps original deadlines.
 
 ## Run
 
-Requires Docker Compose, Neon Postgres/Auth and an OpenRouter key.
+Requires Docker Compose and configured Neon Postgres/Auth + OpenRouter. Secrets stay in the ignored `.env`; use [.env.example](.env.example) for every setting.
 
 ```sh
 cp -n .env.example .env
-# Fill the ignored .env privately, then:
-neon deploy --no-env-pull
+# Fill Neon connection/Auth URLs, OPENROUTER_API_KEY and BOOTSTRAP_ADMIN_EMAIL.
 docker compose up --build -d --wait
-docker compose exec api python -m app.seed
+docker compose exec api python -m app.seed       # optional fictional policies
 ```
 
-Set `DATABASE_URL` (pooled), `DATABASE_URL_UNPOOLED` (direct), `OPENROUTER_API_KEY`, `NEON_AUTH_BASE_URL` and `BOOTSTRAP_ADMIN_EMAIL`. Keep TLS options and the app database name; `MIGRATION_DATABASE_URL` optionally overrides the migration connection. See [.env.example](.env.example).
+Migrations run automatically through the direct database URL. Keep app data in `test-db` and managed Auth in `neondb`. First admin: register and verify `BOOTSTRAP_ADMIN_EMAIL`; authorize teammates in **Settings**.
 
-Register and verify the bootstrap email in the app. Admins authorize teammates in **Settings**; no invitation email is sent. Seed adds fictional policies and demo assignees, not login accounts.
+**[App :8080](http://localhost:8080)** · **[Outgoing mail :8025](http://localhost:8025)** · **[API docs :8000](http://localhost:8000/docs)**
 
-**[App](http://localhost:8080)** · **[Mailpit inbox](http://localhost:8025)** · **[API docs](http://localhost:8000/docs)**
+Try an incoming email locally; it appears as a ticket on the next sync:
 
-## Verify (Node 24+)
+```sh
+docker compose exec api python -m app.mail_demo
+```
+
+**Real mailbox:** set `MAIL_DELIVERY_MODE=smtp`, real `IMAP_*`/`SMTP_*` credentials with TLS, and an HTTPS `PUBLIC_APP_URL`; apply with `docker compose up -d`. Supply your mail account, authenticated sender domain and public hosting. Defaults use GreenMail + Mailpit: no external mail is sent.
+
+## Verify
+
+Node 24+; backend tests use disposable PostgreSQL, never the live Neon database.
 
 ```sh
 npm --prefix frontend ci
-npm --prefix frontend test
-npm run build
-
-docker compose --profile test build tests
-docker compose --profile test run --rm tests
+npm run build && npm --prefix frontend test
+docker compose --profile test run --build --rm tests
 ```
 
-[GitHub CI](.github/workflows/ci.yml) runs the session regression, build and backend suite. Backend tests use disposable PostgreSQL/pgvector, signed test JWTs and controlled provider/SMTP boundaries—never the live Neon database.
-
-## Boundaries
-
-- SMTP is captured locally; customer messages are logged manually. No external email delivery, inbound email sync, public hosting or multi-tenancy is configured.
-- `liquid/lfm-2.5-embedding-350m:free`: **512 tokens/input**, 1024 dimensions; inputs may be retained for training. Long conversations fail explicitly, without truncation.
-- `nvidia/nemotron-3-ultra-550b-a55b:free`: strictly validated JSON; no automatic retries, repair or model fallback. Citations prove provenance, not correctness.
+**Limits:** single workspace; text-layer PDFs only; email attachments stay in the mailbox. Full AI history is capped at 100 KB, never silently truncated; private notes never reach AI or email. AI output is strictly validated, without retries or fallback. Providers may retain inputs: use synthetic or explicitly authorized data.

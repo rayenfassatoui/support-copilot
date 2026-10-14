@@ -20,12 +20,14 @@ export function DocumentContent({ document }: { document: KnowledgeDocument }) {
         <h3>{document.title}</h3>
         <div className="document-original-metadata metadata">
           <span>{document.chunk_count} {document.chunk_count === 1 ? 'chunk' : 'chunks'}</span>
+          <span>Revision {document.version}{document.is_current ? ' · current' : ' · archived'}</span>
           <span>Indexed <time dateTime={document.created_at}>{formatDate(document.created_at)}</time></span>
         </div>
         <div className="document-original-reference">
           {safeHttpUrl(document.source_url) ? <SourceLink url={document.source_url} /> : <span className="metadata"><FileText size={14} aria-hidden="true" />Local indexed source</span>}
         </div>
       </header>
+      {!document.is_current && <p className="notice notice-warning">Archived revision. This citation preserves the original evidence; new AI analyses use the current knowledge documents.</p>}
       <pre className="plain-document" tabIndex={0} aria-label={`Original text of ${document.title}`}>{document.content}</pre>
     </article>
   );
@@ -38,7 +40,6 @@ export function SourceDisclosure({ documentId, number }: { documentId: string; n
     queryKey: queryKeys.document(documentId),
     queryFn: ({ signal }) => api.document(documentId, signal),
     enabled: open,
-    staleTime: Infinity,
   });
   return (
     <details className="source-disclosure" onToggle={(event) => setOpen(event.currentTarget.open)}>

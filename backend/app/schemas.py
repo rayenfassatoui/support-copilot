@@ -106,47 +106,30 @@ class EscalationReason(str, Enum):
     policy_requires_review = "policy_requires_review"
 
 
-class ModelCitation(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-    chunk_id: str
-    quote: str
-
-    @field_validator("chunk_id")
-    @classmethod
-    def valid_uuid(cls, value: str) -> str:
-        return str(UUID(value))
-
-    @field_validator("quote")
-    @classmethod
-    def valid_quote(cls, value: str) -> str:
-        if not value.strip() or len(value) > 600:
-            raise ValueError("Quote must be nonblank and at most 600 characters.")
-        return value
-
-
 class ModelAnalysis(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     intent: Intent
     priority: Priority
-    classification_reason: str
+    classification_reason: str = Field(min_length=1, max_length=500)
     grounded: bool
-    response_draft: str | None
-    citations: list[ModelCitation]
-    escalation_reasons: list[EscalationReason]
+    response_draft: str | None = Field(max_length=6000)
+    citations: dict[str, Annotated[str, StringConstraints(min_length=1, max_length=600, pattern=r"\S")]] = Field(
+        max_length=5,
+        description="Map each cited source UUID to one exact supporting excerpt. Use each source only once.",
+    )
+    escalation_reasons: list[Annotated[EscalationReason, Field(strict=False)]] = Field(description="Unique escalation reason values; never repeat a reason.")
 
     @model_validator(mode="after")
     def valid_analysis(self):
-        if not self.classification_reason.strip() or len(self.classification_reason) > 500:
-            raise ValueError("Classification reason must be nonblank and at most 500 characters.")
+        if not self.classification_reason.strip():
+            raise ValueError("Classification reason must be nonblank.")
         if len(set(self.escalation_reasons)) != len(self.escalation_reasons):
             raise ValueError("Escalation reasons must be unique.")
-        if len({citation.chunk_id for citation in self.citations}) != len(self.citations):
-            raise ValueError("Cited chunks must be unique.")
         if self.grounded:
-            if self.response_draft is None or not self.response_draft.strip() or len(self.response_draft) > 6000:
-                raise ValueError("Grounded draft must be nonblank and at most 6000 characters.")
-            if not 1 <= len(self.citations) <= 5:
-                raise ValueError("A grounded draft requires one to five citations.")
+            if self.response_draft is None or not self.response_draft.strip():
+                raise ValueError("Grounded draft must be nonblank.")
+            if not self.citations:
+                raise ValueError("A grounded draft requires at least one citation.")
         elif self.response_draft is not None or self.citations:
             raise ValueError("Ungrounded results must have no draft or citations.")
         return self
@@ -235,7 +218,7 @@ class TicketEventRead(BaseModel):
 
 class KnowledgeCreate(RequestModel):
     title: Title
-    content: Annotated[str, StringConstraints(min_length=50, max_length=20000)]
+    content: Annotated[str, StringConstraints(min_length=50, max_length=500000)]
     source_url: AnyHttpUrl | None = None
 
     @field_validator("content", mode="before")
@@ -250,6 +233,9 @@ class KnowledgeSummary(BaseModel):
     source_url: str | None
     created_at: UtcDatetime
     chunk_count: int
+    family_id: UUID
+    version: int
+    is_current: bool
 
 
 class KnowledgeRead(KnowledgeSummary):
@@ -374,7 +360,8 @@ class MessageRead(BaseModel):
     ticket_id: UUID
     kind: MessageKind
     body: str
-    author: ActorRead
+    author: ActorRead | None
+    sender_email: EmailStr | None = None
     source_run_id: UUID | None
     ticket_version: int
     version: int

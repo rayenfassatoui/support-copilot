@@ -13,7 +13,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.db import create_database_engine
 from app.integrations.openrouter import OpenRouterClient, get_openrouter
-from app.models import Agent, CopilotCitation, CopilotRun, KnowledgeChunk, KnowledgeDocument, Member, SavedView, SlaPolicy, Ticket, TicketEvent, TicketMessage
+from app.models import Agent, AssignmentRule, BusinessCalendar, CopilotCitation, CopilotRun, CustomerFeedback, InboundReceipt, KnowledgeChunk, KnowledgeDocument, MailboxState, Member, SavedView, SlaPolicy, Ticket, TicketEvent, TicketMessage
 from app.services.members import member_read
 from app.services.sla import DEFAULT_POLICIES
 from tests.guard_database import assert_test_database_urls, load_guarded_settings
@@ -31,7 +31,7 @@ UNRELATED_CONTENT = (
     "Invoices are available from Settings > Billing > Invoices. "
     "Never request a full card number or CVV."
 )
-TABLES = (TicketMessage, SavedView, CopilotCitation, CopilotRun, KnowledgeChunk, KnowledgeDocument, TicketEvent, Ticket, Member, Agent)
+TABLES = (InboundReceipt, MailboxState, CustomerFeedback, AssignmentRule, TicketMessage, SavedView, CopilotCitation, CopilotRun, KnowledgeChunk, KnowledgeDocument, TicketEvent, Ticket, Member, Agent)
 
 
 def unit_vector(axis: int = 0, magnitude: float = 1.0) -> list[float]:
@@ -54,16 +54,21 @@ def model_result(body: dict, **overrides) -> dict:
         "classification_reason": "The customer needs help accessing their account.",
         "grounded": bool(sources),
         "response_draft": "Please follow the steps in the cited policy." if sources else None,
-        "citations": [{"chunk_id": sources[0]["id"], "quote": sources[0]["text"][:180]}] if sources else [],
+        "citations": {sources[0]["id"]: sources[0]["text"][:180]} if sources else {},
         "escalation_reasons": [],
     }
     result.update(overrides)
     return result
 
 
-def chat_envelope(result: dict | str, *, finish_reason: str = "stop") -> dict:
-    content = result if isinstance(result, str) else json.dumps(result)
-    return {"choices": [{"finish_reason": finish_reason, "message": {"role": "assistant", "content": content}}]}
+def chat_envelope(result: dict | str, *, finish_reason: str = "tool_calls") -> dict:
+    arguments = result if isinstance(result, str) else json.dumps(result)
+    return {"choices": [{"finish_reason": finish_reason, "message": {
+        "role": "assistant", "content": None,
+        "tool_calls": [{"id": "analysis-call", "type": "function", "function": {
+            "name": "submit_support_analysis", "arguments": arguments,
+        }}],
+    }}]}
 
 
 def database_counts(sessions) -> dict[str, int]:
@@ -75,13 +80,18 @@ def reset_database(engine, settings) -> None:
     assert_test_database_urls(settings)
     with engine.begin() as connection:
         connection.execute(text(
-            "TRUNCATE TABLE ticket_messages, saved_views, members, copilot_citations, copilot_runs, knowledge_chunks, "
+            "TRUNCATE TABLE inbound_receipts, mailbox_states, customer_feedback, assignment_rules, business_calendar, "
+            "ticket_messages, saved_views, members, copilot_citations, copilot_runs, knowledge_chunks, "
             "knowledge_documents, ticket_events, tickets, agents, sla_policies RESTART IDENTITY"
         ))
         connection.execute(SlaPolicy.__table__.insert(), [
             {"priority": priority, "first_response_minutes": response, "resolution_minutes": resolution, "version": 1}
             for priority, response, resolution in DEFAULT_POLICIES
         ])
+        connection.execute(BusinessCalendar.__table__.insert(), [{
+            "id": 1, "enabled": False, "timezone": "UTC", "weekdays": [0, 1, 2, 3, 4],
+            "opens_minute": 540, "closes_minute": 1020, "holidays": [], "alert_minutes": 30, "version": 1,
+        }])
 
 
 @dataclass(frozen=True)

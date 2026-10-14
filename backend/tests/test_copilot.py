@@ -18,9 +18,9 @@ from tests.conftest import (
 
 def supported_reply(body, request):
     source = next(source for source in user_payload(body)["sources"] if RESET_QUOTE in source["text"])
-    result = model_result(body, response_draft="Use Forgot password. Reset links expire after 30 minutes.", citations=[
-        {"chunk_id": source["id"], "quote": RESET_QUOTE},
-    ])
+    result = model_result(body, response_draft="Use Forgot password. Reset links expire after 30 minutes.", citations={
+        source["id"]: RESET_QUOTE,
+    })
     return httpx.Response(200, json=chat_envelope(result))
 
 
@@ -99,10 +99,10 @@ def test_multiple_citations_keep_model_order_and_accept_whitespace_normalized_qu
     def ordered_reply(body, request):
         sources = list(reversed(user_payload(body)["sources"]))
         chosen_ids.extend(source["id"] for source in sources)
-        citations = []
+        citations = {}
         for source in sources:
             quote = RESET_QUOTE.replace(" ", "  \n") if source["title"] == first["title"] else "Settings > Billing > Invoices."
-            citations.append({"chunk_id": source["id"], "quote": quote})
+            citations[source["id"]] = quote
         return httpx.Response(200, json=chat_envelope(model_result(body, citations=citations)))
 
     provider.chat_handler = ordered_reply
@@ -126,7 +126,7 @@ def test_five_unique_verified_citations_are_accepted_and_persisted(client, ticke
         document_ids.add(document_factory(title=f"Policy number {index}", content=content)["id"])
 
     def cite_every_source(body, request):
-        citations = [{"chunk_id": source["id"], "quote": source["text"]} for source in user_payload(body)["sources"]]
+        citations = {source["id"]: source["text"] for source in user_payload(body)["sources"]}
         return httpx.Response(200, json=chat_envelope(model_result(body, citations=citations)))
 
     provider.chat_handler = cite_every_source
@@ -147,18 +147,15 @@ def test_invalid_citation_provenance_rejects_whole_run_and_keeps_previous_succes
 
     def invalid_citation(body, request):
         source = user_payload(body)["sources"][0]
-        citation = {"chunk_id": source["id"], "quote": RESET_QUOTE}
+        citations = {source["id"]: RESET_QUOTE}
         if defect == "unknown-id":
-            citation["chunk_id"] = str(uuid4())
+            citations = {str(uuid4()): RESET_QUOTE}
         elif defect == "fabricated-quote":
-            citation["quote"] = "Every customer is entitled to an automatic refund of all renewal charges."
-        elif defect == "invented-title":
-            citation["title"] = "An invented document title"
-        elif defect == "invented-url":
-            citation["source_url"] = "https://attacker.example/"
+            citations[source["id"]] = "Every customer is entitled to an automatic refund of all renewal charges."
         else:
-            citation["document_id"] = document["id"]
-        return httpx.Response(200, json=chat_envelope(model_result(body, citations=[citation])))
+            field = {"invented-title": "title", "invented-url": "source_url", "invented-document-id": "document_id"}[defect]
+            citations[source["id"]] = {"quote": RESET_QUOTE, field: "Untrusted metadata"}
+        return httpx.Response(200, json=chat_envelope(model_result(body, citations=citations)))
 
     provider.chat_handler = invalid_citation
     calls = len(provider.calls_for("chat/completions"))
@@ -187,7 +184,7 @@ def test_existing_but_nonretrieved_chunk_is_not_an_acceptable_citation(client, d
         sources = user_payload(body)["sources"]
         assert len(sources) == 5
         assert far_id not in {source["id"] for source in sources}
-        return httpx.Response(200, json=chat_envelope(model_result(body, citations=[{"chunk_id": far_id, "quote": far_content}])))
+        return httpx.Response(200, json=chat_envelope(model_result(body, citations={far_id: far_content})))
 
     provider.chat_handler = cite_far_chunk
     response = client.post(f"/api/tickets/{ticket['id']}/analyze", json={"version": 1})
@@ -207,7 +204,7 @@ def test_empty_or_unrelated_evidence_has_no_customer_draft_and_requires_human_ha
     def abstain(body, request):
         assert bool(user_payload(body)["sources"]) is has_unrelated_document
         return httpx.Response(200, json=chat_envelope(model_result(
-            body, intent="technical", grounded=False, response_draft=None, citations=[], escalation_reasons=[],
+            body, intent="technical", grounded=False, response_draft=None, citations={}, escalation_reasons=[],
         )))
 
     provider.chat_handler = abstain
@@ -235,7 +232,7 @@ def test_empty_corpus_cannot_accept_a_grounded_invented_answer(client, ticket_fa
     before = database_counts(sessions)
     provider.chat_handler = lambda body, request: httpx.Response(200, json=chat_envelope(model_result(
         body, grounded=True, response_draft="An invented unsupported procedure.",
-        citations=[{"chunk_id": str(uuid4()), "quote": "This quote is not in any source."}],
+        citations={str(uuid4()): "This quote is not in any source."},
     )))
     response = client.post(f"/api/tickets/{ticket['id']}/analyze", json={"version": 1})
     assert response.status_code == 502
@@ -279,7 +276,7 @@ def test_ungrounded_security_urgent_analysis_unions_all_required_escalations(cli
     ticket = ticket_factory(title="Suspected customer data leak", description="Unknown users accessed records. I suspect a leak and need a human.")
     provider.chat_handler = lambda body, request: httpx.Response(200, json=chat_envelope(model_result(
         body, intent="security", priority="urgent", grounded=False, response_draft=None,
-        citations=[], escalation_reasons=["human_requested"],
+        citations={}, escalation_reasons=["human_requested"],
     )))
     response = client.post(f"/api/tickets/{ticket['id']}/analyze", json={"version": 1})
     assert response.status_code == 201
@@ -351,6 +348,11 @@ def test_malformed_model_result_never_replaces_previous_success(client, provider
             content = "{not valid JSON"
         elif defect == "fenced-json":
             content = "```json\n" + json.dumps(result) + "\n```"
+        elif defect == "duplicate-citations":
+            chunk_id, quote = next(iter(result["citations"].items()))
+            pair = f"{json.dumps(chunk_id)}: {json.dumps(quote)}"
+            other_fields = {key: value for key, value in result.items() if key != "citations"}
+            content = json.dumps(other_fields)[:-1] + ',"citations":{' + pair + ',' + pair + '}}'
         else:
             if defect == "invalid-intent":
                 result["intent"] = "password_reset"
@@ -369,21 +371,19 @@ def test_malformed_model_result_never_replaces_previous_success(client, provider
             elif defect == "null-grounded-draft":
                 result["response_draft"] = None
             elif defect == "no-grounded-citations":
-                result["citations"] = []
+                result["citations"] = {}
             elif defect == "too-many-citations":
-                result["citations"] = [{"chunk_id": str(uuid4()), "quote": RESET_QUOTE} for _ in range(6)]
+                result["citations"] = {str(uuid4()): RESET_QUOTE for _ in range(6)}
             elif defect == "ungrounded-draft":
-                result.update(grounded=False, citations=[])
+                result.update(grounded=False, citations={})
             elif defect == "ungrounded-citations":
                 result.update(grounded=False, response_draft=None)
-            elif defect == "duplicate-citations":
-                result["citations"] *= 2
             elif defect == "blank-quote":
-                result["citations"][0]["quote"] = " \n "
+                result["citations"] = {next(iter(result["citations"])): " \n "}
             elif defect == "long-quote":
-                result["citations"][0]["quote"] = "x" * 601
+                result["citations"] = {next(iter(result["citations"])): "x" * 601}
             elif defect == "invalid-uuid":
-                result["citations"][0]["chunk_id"] = "not-a-uuid"
+                result["citations"] = {"not-a-uuid": RESET_QUOTE}
             elif defect == "unknown-escalation":
                 result["escalation_reasons"] = ["contact_admin"]
             elif defect == "duplicate-escalations":
@@ -426,11 +426,19 @@ PROVIDER_FAILURES = [
     ("empty-choices", 502, "ai_invalid_response"),
     ("invalid-choice", 502, "ai_invalid_response"),
     ("missing-message", 502, "ai_invalid_response"),
-    ("empty-content", 502, "ai_invalid_response"),
-    ("non-string-content", 502, "ai_invalid_response"),
+    ("empty-arguments", 502, "ai_invalid_response"),
+    ("non-string-arguments", 502, "ai_invalid_response"),
+    ("missing-arguments", 502, "ai_invalid_response"),
+    ("missing-calls", 502, "ai_invalid_response"),
+    ("empty-calls", 502, "ai_invalid_response"),
+    ("multiple-calls", 502, "ai_invalid_response"),
+    ("invalid-call", 502, "ai_invalid_response"),
+    ("wrong-call-type", 502, "ai_invalid_response"),
+    ("wrong-function", 502, "ai_invalid_response"),
+    ("invalid-function", 502, "ai_invalid_response"),
     ("missing-finish", 502, "ai_invalid_response"),
     ("truncated", 502, "ai_invalid_response"),
-    ("tool-calls", 502, "ai_invalid_response"),
+    ("plain-text", 502, "ai_invalid_response"),
     ("refusal", 502, "ai_refused"),
     ("content-filter", 502, "ai_refused"),
     ("top-level-error", 503, "ai_unavailable"),
@@ -477,16 +485,33 @@ def test_provider_failures_have_safe_categories_no_retries_and_preserve_previous
             payload["choices"] = [None]
         elif failure == "missing-message":
             choice.pop("message")
-        elif failure == "empty-content":
-            choice["message"]["content"] = " \n "
-        elif failure == "non-string-content":
-            choice["message"]["content"] = {"not": "a string"}
+        elif failure == "empty-arguments":
+            choice["message"]["tool_calls"][0]["function"]["arguments"] = " \n "
+        elif failure == "non-string-arguments":
+            choice["message"]["tool_calls"][0]["function"]["arguments"] = {"not": "a string"}
+        elif failure == "missing-arguments":
+            choice["message"]["tool_calls"][0]["function"].pop("arguments")
+        elif failure == "missing-calls":
+            choice["message"].pop("tool_calls")
+        elif failure == "empty-calls":
+            choice["message"]["tool_calls"] = []
+        elif failure == "multiple-calls":
+            choice["message"]["tool_calls"] *= 2
+        elif failure == "invalid-call":
+            choice["message"]["tool_calls"] = [None]
+        elif failure == "wrong-call-type":
+            choice["message"]["tool_calls"][0]["type"] = "custom"
+        elif failure == "wrong-function":
+            choice["message"]["tool_calls"][0]["function"]["name"] = "send_email"
+        elif failure == "invalid-function":
+            choice["message"]["tool_calls"][0]["function"] = None
         elif failure == "missing-finish":
             choice.pop("finish_reason")
         elif failure == "truncated":
             choice["finish_reason"] = "length"
-        elif failure == "tool-calls":
-            choice["finish_reason"] = "tool_calls"
+        elif failure == "plain-text":
+            choice["finish_reason"] = "stop"
+            choice["message"] = {"role": "assistant", "content": json.dumps(model_result(body))}
         elif failure == "refusal":
             choice["message"]["refusal"] = private_message
         elif failure == "content-filter":

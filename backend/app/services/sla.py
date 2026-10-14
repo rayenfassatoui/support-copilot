@@ -4,8 +4,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.errors import DomainError
-from app.models import SlaPolicy, Ticket
+from app.models import BusinessCalendar, SlaPolicy, Ticket
 from app.schemas import SlaPolicyPatch, SlaPolicyRead, SlaTarget, TicketSla
+from app.services.calendar import add_business_minutes
 
 DEFAULT_POLICIES = (("urgent", 60, 240), ("high", 240, 1440), ("medium", 480, 2880), ("low", 1440, 7200))
 
@@ -14,8 +15,11 @@ def snapshot_deadlines(session: Session, ticket: Ticket) -> None:
     policy = session.get(SlaPolicy, ticket.priority)
     if policy is None:
         raise DomainError("sla_not_configured")
-    ticket.first_response_due_at = ticket.created_at + timedelta(minutes=policy.first_response_minutes)
-    ticket.resolution_due_at = ticket.created_at + timedelta(minutes=policy.resolution_minutes)
+    calendar = session.get(BusinessCalendar, 1)
+    if calendar is None:
+        raise DomainError("automation_not_configured")
+    ticket.first_response_due_at = add_business_minutes(ticket.created_at, policy.first_response_minutes, calendar)
+    ticket.resolution_due_at = add_business_minutes(ticket.created_at, policy.resolution_minutes, calendar)
 
 
 def target(due_at: datetime, completed_at: datetime | None, now: datetime) -> SlaTarget:

@@ -13,13 +13,26 @@ services:
       NEON_AUTH_BASE_URL: ${NEON_AUTH_BASE_URL:-}
       NEON_AUTH_JWKS_URL: ${NEON_AUTH_JWKS_URL:-}
       BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
-      MAIL_DELIVERY_MODE: mailpit
-      SMTP_HOST: mailpit
-      SMTP_PORT: 1025
-      SMTP_SECURITY: none
+      MAIL_DELIVERY_MODE: ${MAIL_DELIVERY_MODE:-mailpit}
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_SECURITY: ${SMTP_SECURITY:-none}
       SMTP_FROM: ${SMTP_FROM:-support@example.com}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      IMAP_HOST: ${IMAP_HOST:-mailbox}
+      IMAP_PORT: ${IMAP_PORT:-3143}
+      IMAP_SECURITY: ${IMAP_SECURITY:-none}
+      IMAP_USERNAME: ${IMAP_USERNAME:-support}
+      IMAP_PASSWORD: ${IMAP_PASSWORD:-local-mail-only}
+      IMAP_FOLDER: ${IMAP_FOLDER:-INBOX}
+      MAILBOX_POLL_SECONDS: ${MAILBOX_POLL_SECONDS:-30}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:8080}
+    stop_grace_period: 60s
     depends_on:
       mailpit:
+        condition: service_started
+      mailbox:
         condition: service_started
     ports:
       - "127.0.0.1:8000:8000"
@@ -41,6 +54,14 @@ services:
     ports:
       - "127.0.0.1:8025:8025"
       - "127.0.0.1:1025:1025"
+  mailbox:
+    image: greenmail/standalone:2.1.14
+    environment:
+      GREENMAIL_OPTS: "-Dgreenmail.setup.test.all -Dgreenmail.hostname=0.0.0.0 -Dgreenmail.users=support:local-mail-only@example.com"
+      JAVA_OPTS: "-Xms32m -Xmx128m"
+    ports:
+      - "127.0.0.1:3025:3025"
+      - "127.0.0.1:3143:3143"
   db-test:
     profiles: [test]
     image: pgvector/pgvector:0.8.7-pg17-bookworm

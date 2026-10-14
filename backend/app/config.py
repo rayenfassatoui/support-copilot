@@ -35,6 +35,28 @@ class Settings(BaseSettings):
     smtp_from: EmailStr = "support@example.com"
     smtp_timeout: float = Field(default=15.0, gt=0, le=60)
     mail_delivery_mode: Literal["mailpit", "smtp"] = "mailpit"
+    imap_host: str = ""
+    imap_port: int = Field(default=993, ge=1, le=65535)
+    imap_security: Literal["none", "starttls", "tls"] = "tls"
+    imap_username: str = ""
+    imap_password: SecretStr = Field(default=SecretStr(""), repr=False)
+    imap_folder: str = "INBOX"
+    imap_timeout: float = Field(default=15, gt=0, le=60)
+    mailbox_poll_seconds: int = Field(default=30, ge=10, le=3600)
+    imap_batch_size: int = Field(default=25, ge=1, le=100)
+    public_app_url: str = "http://localhost:8080"
+
+    @field_validator("public_app_url")
+    @classmethod
+    def valid_public_url(cls, value: str) -> str:
+        value = value.strip().rstrip("/")
+        url = urlparse(value)
+        local = url.hostname in {"localhost", "127.0.0.1", "::1"}
+        if not url.hostname or url.username or url.password or url.query or url.fragment or url.path or not (
+            url.scheme == "https" or (url.scheme == "http" and local)
+        ):
+            raise ValueError("Public app URL must be an HTTPS origin (HTTP permitted only on loopback).")
+        return value
 
     @field_validator("neon_auth_base_url", "neon_auth_jwks_url")
     @classmethod
@@ -57,6 +79,13 @@ class Settings(BaseSettings):
             raise ValueError("Mailpit mode only permits the local capture server.")
         if self.mail_delivery_mode == "smtp" and self.smtp_security == "none":
             raise ValueError("External SMTP requires TLS.")
+        if self.imap_host:
+            if self.imap_security == "none" and self.imap_host not in {"mailbox", "localhost", "127.0.0.1", "::1"}:
+                raise ValueError("External IMAP requires TLS.")
+            if not self.imap_username or not self.imap_password.get_secret_value():
+                raise ValueError("IMAP requires a username and password.")
+        if any(char in self.imap_folder for char in "\r\n") or not self.imap_folder.strip():
+            raise ValueError("Select a valid IMAP folder.")
         return self
 
     @field_validator("database_url", "migration_database_url")

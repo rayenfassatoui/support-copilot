@@ -41,7 +41,7 @@ function AdminSettings() {
         </form>
       </section>
       <section className="panel" aria-labelledby="sla-heading"><div className="section-heading"><h2 id="sla-heading">Service targets</h2><button className="button button-secondary button-small" onClick={() => { void policies.refetch().then(result => { if (result.isSuccess) setPolicyReload(value => value + 1); }); }} disabled={policies.isFetching}><RefreshCw size={14} aria-hidden="true" />Reload (discard edits)</button></div>
-        <p className="settings-intro">Elapsed time, 24/7. First response is recorded only after SMTP accepts an approved reply; notes and drafts do not stop the clock. Changes apply to new tickets and explicit priority changes, not existing deadlines. Reopening retains the original deadlines.</p>
+        <p className="settings-intro">Durations follow the calendar configured in Automation, or run 24/7 when that calendar is disabled. First response is recorded only after SMTP accepts an approved reply. Changes apply to new tickets and explicit priority changes; reopening retains the original deadlines.</p>
         <ErrorNotice error={policies.error} />{policies.isPending && <Loading>Loading service targets…</Loading>}
         <div className="settings-policy-list">{policies.data?.map(policy => <PolicyEditor key={`${policy.priority}:${policy.version}:${policyReload}`} policy={policy} />)}</div>
       </section>

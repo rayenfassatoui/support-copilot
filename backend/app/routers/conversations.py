@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.auth import current_member
@@ -28,6 +28,12 @@ def create_message(ticket_id: UUID, payload: MessageCreate, sessions: Sessions, 
 @router.patch("/{message_id}", response_model=MessageRead)
 def patch_message(ticket_id: UUID, message_id: UUID, payload: MessagePatch, sessions: Sessions, actor: Actor):
     return conversations.patch_message(sessions, ticket_id, message_id, payload, actor)
+
+
+@router.delete("/{message_id}", status_code=204)
+def delete_message(ticket_id: UUID, message_id: UUID, payload: MessageAction, sessions: Sessions, actor: Actor):
+    conversations.delete_message(sessions, ticket_id, message_id, payload)
+    return Response(status_code=204)
 
 
 @router.post("/{message_id}/approve", response_model=MessageRead)

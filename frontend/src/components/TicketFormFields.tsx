@@ -60,7 +60,7 @@ export function TicketFormFields({ values, onChange, agents, errors, disabled = 
         <label htmlFor="ticket-description">Description <span className="required-text">(required)</span></label>
         <textarea id="ticket-description" name="description" rows={8} value={values.description} onChange={(event) => onChange('description', event.target.value)} required minLength={10} maxLength={10_000}
           placeholder="Describe the issue and what the customer needs…" aria-invalid={Boolean(errors.description)} aria-describedby={`ticket-description-help${errors.description ? ' ticket-description-error' : ''}`} />
-        <p className="field-help" id="ticket-description-help">10–10,000 characters. Use synthetic customer details for this demo; do not include passwords, API keys, or sensitive data.</p>
+        <p className="field-help" id="ticket-description-help">10–10,000 characters. Use synthetic or authorized details; do not include passwords, API keys, or sensitive personal data.</p>
         <FieldError id="ticket-description-error" message={errors.description} />
       </div>
       <div className={editing ? 'field-row' : undefined}>
@@ -68,11 +68,11 @@ export function TicketFormFields({ values, onChange, agents, errors, disabled = 
           <label htmlFor="ticket-assignee">Assigned agent</label>
           <select id="ticket-assignee" name="assignee_id" value={values.assignee_id} onChange={(event) => onChange('assignee_id', event.target.value)} disabled={disabled || assigneesUnavailable}
             aria-invalid={Boolean(errors.assignee_id)} aria-describedby={`ticket-assignee-help${errors.assignee_id ? ' ticket-assignee-error' : ''}`}>
-            <option value="">Unassigned</option>
+            <option value="">{editing ? 'Unassigned' : 'Use assignment rules'}</option>
             {values.assignee_id && !agents.some((agent) => agent.id === values.assignee_id) && <option value={values.assignee_id}>Current assigned agent</option>}
             {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
           </select>
-          <p className="field-help" id="ticket-assignee-help">{assigneesUnavailable ? 'Agent choices are unavailable until the agent list loads.' : agents.length ? 'Choose an existing agent, or leave unassigned.' : 'No agents are available. Ask the demo operator to seed the agents.'}</p>
+          <p className="field-help" id="ticket-assignee-help">{assigneesUnavailable ? 'Agent choices are unavailable until the agent list loads.' : !agents.length ? 'No agents are available. Ask an administrator to add a team member.' : editing ? 'Choose an existing agent, or leave unassigned.' : 'Choose an agent, or apply the first matching rule. No match leaves the ticket unassigned.'}</p>
           <FieldError id="ticket-assignee-error" message={errors.assignee_id} />
         </div>
         <div className="field">

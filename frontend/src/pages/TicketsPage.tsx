@@ -1,6 +1,6 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowRight, ChevronLeft, ChevronRight, CircleAlert, Inbox, Plus, RotateCcw, Search, SlidersHorizontal, UserRound } from 'lucide-react';
 import { api } from '../api';
 import { formatDate, statusLabels, statuses } from '../format';
@@ -11,6 +11,8 @@ import { EmptyState, ErrorNotice, Loading } from '../components/Feedback';
 import { Avatar } from '../components/Avatar';
 import { PageHeader } from '../components/PageHeader';
 import { SavedViews } from '../components/SavedViews';
+import { TicketDetailPage } from './TicketDetailPage';
+import { ignoresShortcut } from '../components/CommandPalette';
 import './tickets.css';
 import './workspace.css';
 
@@ -19,6 +21,11 @@ const intents: Intent[] = ['billing', 'technical', 'account', 'cancellation', 's
 
 export function TicketsPage() {
   const [search, setSearch] = useSearchParams();
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const pane = useRef<HTMLElement>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const suffix = search.size ? `?${search}` : '';
   const rawStatus = search.get('status');
   const status = rawStatus && statuses.includes(rawStatus as TicketStatus) ? rawStatus as TicketStatus : undefined;
   const assignee = search.get('assignee_id') || undefined;
@@ -43,6 +50,20 @@ export function TicketsPage() {
   const sortLabel = filters.sort === 'due' ? 'Earliest outstanding deadline first' : filters.sort === 'priority' ? 'Urgent priority first' : 'Recently updated first';
   const tickets = useQuery({ queryKey: queryKeys.tickets(filters), queryFn: ({ signal }) => api.tickets(filters, signal) });
   const agents = useQuery({ queryKey: queryKeys.agents, queryFn: ({ signal }) => api.agents(signal) });
+  useEffect(() => { pane.current?.scrollTo({ top: 0 }); }, [id]);
+  useEffect(() => {
+    const handle = (event: KeyboardEvent) => {
+      if (ignoresShortcut(event) || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || (event.key !== 'j' && event.key !== 'k')) return;
+      const items = tickets.data?.items;
+      if (!items?.length) return;
+      const current = items.findIndex(ticket => ticket.id === id);
+      const next = current < 0 ? event.key === 'j' ? 0 : items.length - 1 : Math.max(0, Math.min(items.length - 1, current + (event.key === 'j' ? 1 : -1)));
+      event.preventDefault();
+      navigate(`/tickets/${items[next].id}${suffix}`);
+    };
+    window.addEventListener('keydown', handle);
+    return () => window.removeEventListener('keydown', handle);
+  }, [tickets.data, id, navigate, suffix]);
 
   function changeFilter(key: string, value: string) {
     setSearch((current) => {
@@ -78,6 +99,7 @@ export function TicketsPage() {
   }
 
   return (
+    <div className={`inbox-workspace${id ? ' is-split' : ''}`}>
     <div className="ticket-queue-page">
       <PageHeader
         title="Tickets"
@@ -85,6 +107,8 @@ export function TicketsPage() {
         actions={<Link className="button" to="/tickets/new"><Plus size={17} aria-hidden="true" />New ticket</Link>}
       />
       <section className="panel ticket-queue" aria-label="Ticket list">
+        <details className="queue-filter-disclosure" open={!id || filtersOpen} onToggle={event => { if (id) setFiltersOpen(event.currentTarget.open); }}>
+          <summary>Filters and saved views{filtered ? ' · active' : ''}</summary>
         <div className="queue-status-switcher" role="group" aria-label="Filter tickets by status">
           <button type="button" className="queue-status-option" aria-pressed={!status} onClick={() => changeFilter('status', '')}>All tickets</button>
           {statuses.map((value) => (
@@ -121,6 +145,7 @@ export function TicketsPage() {
           </div>
           {filtered && <button type="button" className="button button-quiet queue-clear" onClick={() => setSearch({ limit: String(limit) })}><RotateCcw size={14} aria-hidden="true" />Clear filters</button>}
         </div>
+        </details>
         <div className="queue-feedback">
           <ErrorNotice error={agents.error} onRetry={() => { void agents.refetch(); }} retrying={agents.isFetching} />
           <ErrorNotice error={tickets.error} onRetry={() => { void tickets.refetch(); }} retrying={tickets.isFetching} />
@@ -142,9 +167,9 @@ export function TicketsPage() {
             : <table className="queue-table" role="table">
               <caption className="sr-only">Tickets · {sortLabel}</caption>
               <thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Ticket</th><th scope="col" role="columnheader">Status</th><th scope="col" role="columnheader">Assigned agent</th><th scope="col" role="columnheader">Intent</th><th scope="col" role="columnheader">Priority</th><th scope="col" role="columnheader">Updated</th></tr></thead>
-              <tbody role="rowgroup">{tickets.data.items.map((ticket) => <tr key={ticket.id} role="row">
+              <tbody role="rowgroup">{tickets.data.items.map((ticket) => <tr key={ticket.id} role="row" className={ticket.id === id ? 'queue-selected' : undefined}>
                 <td className="queue-ticket-cell" role="cell">
-                  <Link className="queue-ticket-link" to={`/tickets/${ticket.id}`}><span>{ticket.title}</span><ArrowRight size={15} aria-hidden="true" /></Link>
+                  <Link className="queue-ticket-link" to={`/tickets/${ticket.id}${suffix}`} aria-current={ticket.id === id ? 'page' : undefined}><span>{ticket.title}</span><ArrowRight size={15} aria-hidden="true" /></Link>
                   <div className="queue-ticket-identity"><span>{ticket.customer_email}</span><span className="queue-version">Version {ticket.version}</span></div>
                 </td>
                 <td role="cell"><span className="queue-cell-label" aria-hidden="true">Status</span><StatusBadge status={ticket.status} /></td>
@@ -173,6 +198,8 @@ export function TicketsPage() {
         </>}
       </section>
       <p className="queue-review-note"><ArrowRight size={14} aria-hidden="true" />Open a ticket to review its advice, sources, and activity.</p>
+    </div>
+      {id && <section ref={pane} className="conversation-pane" aria-label="Selected ticket"><TicketDetailPage /></section>}
     </div>
   );
 }

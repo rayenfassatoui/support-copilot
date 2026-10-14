@@ -84,11 +84,11 @@ export function TicketCreatePage() {
         <aside className="ticket-create-context" aria-labelledby="ticket-create-next">
           <h2 id="ticket-create-next">What happens next</h2>
           <ol className="ticket-create-steps">
-            <li><strong>It starts open</strong><p>Assign an agent now, or leave the ticket unassigned for your team.</p></li>
+            <li><strong>It starts open</strong><p>Choose an agent, or let matching assignment rules route the request.</p></li>
             <li><strong>Review with Copilot</strong><p>Run an analysis from the ticket to see classification, advice, and supporting sources.</p></li>
             <li><strong>You stay in control</strong><p>Review any draft and send your response manually. Copilot never sends it for you.</p></li>
           </ol>
-          <div className="ticket-create-safety"><ShieldCheck size={19} strokeWidth={1.6} aria-hidden="true" /><p>This is an AcmeCloud demo. Use fictional customer details and keep sensitive information out of tickets.</p></div>
+          <div className="ticket-create-safety"><ShieldCheck size={19} strokeWidth={1.6} aria-hidden="true" /><p>Only include details you are authorized to process. AI providers may retain inputs; keep secrets and sensitive personal data out of tickets.</p></div>
         </aside>
       </div>
     </div>

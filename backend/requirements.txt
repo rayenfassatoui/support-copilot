@@ -78,8 +78,12 @@ pydantic-settings==2.15.0
     # via -r backend/requirements.in
 pyjwt==2.15.1
     # via -r backend/requirements.in
+pypdf==6.20.1
+    # via -r backend/requirements.in
 python-dotenv==1.2.4
     # via pydantic-settings
+python-multipart==0.0.32
+    # via -r backend/requirements.in
 pyyaml==6.0.3
     # via huggingface-hub
 sqlalchemy==2.0.54

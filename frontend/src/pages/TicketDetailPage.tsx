@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import { ArrowLeft, Clock3, Mail, PencilLine, RotateCcw, Save, Undo2, UserRound } from 'lucide-react';
 import { ApiError, api } from '../api';
 import { formatDate } from '../format';
@@ -17,6 +17,7 @@ import { PageHeader } from '../components/PageHeader';
 import { TicketFormFields, ticketFormValues, validateTicketForm } from '../components/TicketFormFields';
 import type { TicketFormValues } from '../components/TicketFormFields';
 import { TicketTimeline } from '../components/TicketTimeline';
+import { FeedbackRequest } from '../components/FeedbackRequest';
 import './detail.css';
 
 interface TicketEditor {
@@ -29,16 +30,17 @@ const editableFields: (keyof TicketFormValues)[] = ['title', 'customer_email', '
 
 export function TicketDetailPage() {
   const { id } = useParams();
+  const { search } = useLocation();
   if (!id) return (
     <div className="ticket-workbench">
-      <Link className="back-link" to="/tickets"><ArrowLeft size={16} aria-hidden="true" />Back to tickets</Link>
+      <Link className="back-link" to={`/tickets${search}`}><ArrowLeft size={16} aria-hidden="true" />Back to tickets</Link>
       <PageHeader title="Ticket not found" description="Choose a ticket from your queue to open its workspace." />
     </div>
   );
-  return <TicketWorkspace key={id} id={id} />;
+  return <TicketWorkspace key={id} id={id} backTo={`/tickets${search}`} />;
 }
 
-function TicketWorkspace({ id }: { id: string }) {
+function TicketWorkspace({ id, backTo }: { id: string; backTo: string }) {
   const client = useQueryClient();
   const [editor, setEditor] = useState<TicketEditor | null>(null);
   const [errors, setErrors] = useState<FieldErrors>({});
@@ -197,7 +199,7 @@ function TicketWorkspace({ id }: { id: string }) {
   if (ticket.isPending) return <Loading>Loading ticket…</Loading>;
   if (!ticket.data) return (
     <div className="ticket-workbench">
-      <Link className="back-link" to="/tickets"><ArrowLeft size={16} aria-hidden="true" />Back to tickets</Link>
+      <Link className="back-link" to={backTo}><ArrowLeft size={16} aria-hidden="true" />Back to tickets</Link>
       <PageHeader title={ticket.error instanceof ApiError && ticket.error.status === 404 ? 'Ticket not found' : 'Ticket unavailable'} description="Your ticket queue is still available. Try loading this ticket again." />
       <ErrorNotice error={ticket.error} onRetry={() => { void ticket.refetch(); }} retrying={ticket.isFetching} />
     </div>
@@ -208,7 +210,7 @@ function TicketWorkspace({ id }: { id: string }) {
   return (
     <div className="ticket-workbench">
       <div className="ticket-workbench-nav">
-        <Link className="back-link" to="/tickets"><ArrowLeft size={16} aria-hidden="true" />Back to tickets</Link>
+        <Link className="back-link" to={backTo}><ArrowLeft size={16} aria-hidden="true" />Back to tickets</Link>
         <span className="ticket-reference"><span>Ticket reference</span><code>{savedTicket.id}</code></span>
       </div>
 
@@ -255,6 +257,7 @@ function TicketWorkspace({ id }: { id: string }) {
       <div className="ticket-detail-layout">
         <div className="panel-stack ticket-primary-column">
           <ConversationPanel ticket={savedTicket} blocked={analysisBlocked || busy} onChanged={conversationChanged} onBusyChange={setConversationBusy} />
+          {savedTicket.status === 'resolved' && <FeedbackRequest ticket={savedTicket} disabled={analysisBlocked || busy} />}
           <section className="panel ticket-editor" aria-labelledby="ticket-edit-heading">
             <div className="ticket-section-header">
               <div>
