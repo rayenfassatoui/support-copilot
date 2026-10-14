@@ -12,15 +12,13 @@ A support workspace with human-approved replies.
 
 ```mermaid
 flowchart LR
-    C[Customer] -->|Email| M[Support mailbox]
-    M -->|IMAP sync| API[FastAPI · Psycopg]
-    UI[React · Base UI] <-->|Tickets / human review| API
+    MAIL[Support mailbox] -->|IMAP| API["FastAPI<br/>Psycopg"]
+    UI[React · Base UI] <-->|Tickets / review| API
     UI <-->|Sign-in| AUTH[Neon Auth]
-    API -->|Verify JWT| AUTH
-    API <-->|Pooled| DB[(Neon Postgres · pgvector)]
-    API <--> AI[OpenRouter · Liquid + Nemotron]
-    API -->|Approved replies only| SMTP
-    SMTP --> C
+    API -->|JWT| AUTH
+    API <-->|Pooled| DB[("Neon Postgres<br/>pgvector")]
+    API <--> AI["OpenRouter<br/>Liquid + Nemotron"]
+    API -->|Human-approved reply| SMTP["SMTP → customer"]
 ```
 
 ## Run
