@@ -9,3 +9,4 @@ alembic>=1.15,<2
 pgvector>=0.4,<1
 httpx>=0.28,<1
 tokenizers>=0.22,<0.23
+PyJWT[crypto]>=2.10,<3

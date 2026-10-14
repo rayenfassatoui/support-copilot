@@ -1,5 +1,5 @@
 import { statuses, statusLabels } from '../format';
-import type { Agent, FieldErrors, Ticket, TicketStatus } from '../types';
+import type { Agent, FieldErrors, Priority, Ticket, TicketStatus } from '../types';
 import { FieldError } from './Feedback';
 
 export interface TicketFormValues {
@@ -8,6 +8,7 @@ export interface TicketFormValues {
   description: string;
   assignee_id: string;
   status: TicketStatus;
+  priority: Priority;
 }
 
 export function ticketFormValues(ticket: Ticket): TicketFormValues {
@@ -17,6 +18,7 @@ export function ticketFormValues(ticket: Ticket): TicketFormValues {
     description: ticket.description,
     assignee_id: ticket.assignee_id ?? '',
     status: ticket.status,
+    priority: ticket.priority,
   };
 }
 
@@ -72,6 +74,14 @@ export function TicketFormFields({ values, onChange, agents, errors, disabled = 
           </select>
           <p className="field-help" id="ticket-assignee-help">{assigneesUnavailable ? 'Agent choices are unavailable until the agent list loads.' : agents.length ? 'Choose an existing agent, or leave unassigned.' : 'No agents are available. Ask the demo operator to seed the agents.'}</p>
           <FieldError id="ticket-assignee-error" message={errors.assignee_id} />
+        </div>
+        <div className="field">
+          <label htmlFor="ticket-priority">Priority</label>
+          <select id="ticket-priority" value={values.priority} onChange={event => onChange('priority', event.target.value as Priority)} aria-invalid={Boolean(errors.priority)}>
+            {(['low', 'medium', 'high', 'urgent'] as const).map(priority => <option key={priority} value={priority}>{priority[0].toUpperCase() + priority.slice(1)}</option>)}
+          </select>
+          <p className="field-help">Your team's priority determines SLA deadlines. AI advice does not change it.</p>
+          <FieldError id="ticket-priority-error" message={errors.priority} />
         </div>
         {editing && <div className="field">
           <label htmlFor="ticket-status">Status</label>

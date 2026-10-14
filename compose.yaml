@@ -10,6 +10,17 @@ services:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_CHAT_MODEL: ${OPENROUTER_CHAT_MODEL:-nvidia/nemotron-3-ultra-550b-a55b:free}
       OPENROUTER_EMBEDDING_MODEL: ${OPENROUTER_EMBEDDING_MODEL:-liquid/lfm-2.5-embedding-350m:free}
+      NEON_AUTH_BASE_URL: ${NEON_AUTH_BASE_URL:-}
+      NEON_AUTH_JWKS_URL: ${NEON_AUTH_JWKS_URL:-}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      MAIL_DELIVERY_MODE: mailpit
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      SMTP_SECURITY: none
+      SMTP_FROM: ${SMTP_FROM:-support@example.com}
+    depends_on:
+      mailpit:
+        condition: service_started
     ports:
       - "127.0.0.1:8000:8000"
     healthcheck:
@@ -25,6 +36,11 @@ services:
     depends_on:
       api:
         condition: service_healthy
+  mailpit:
+    image: axllent/mailpit:v1.31.5
+    ports:
+      - "127.0.0.1:8025:8025"
+      - "127.0.0.1:1025:1025"
   db-test:
     profiles: [test]
     image: pgvector/pgvector:0.8.7-pg17-bookworm

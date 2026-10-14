@@ -21,7 +21,7 @@ export async function serverEnvironment() {
 
 export function frontendEnvironment() {
   const values = { ...process.env };
-  for (const name of ['DATABASE_URL', 'DATABASE_URL_UNPOOLED', 'MIGRATION_DATABASE_URL', 'OPENROUTER_API_KEY', 'NEON_API_KEY']) {
+  for (const name of ['DATABASE_URL', 'DATABASE_URL_UNPOOLED', 'MIGRATION_DATABASE_URL', 'OPENROUTER_API_KEY', 'NEON_API_KEY', 'SMTP_PASSWORD', 'SMTP_USERNAME', 'BOOTSTRAP_ADMIN_EMAIL']) {
     delete values[name];
   }
   return values;

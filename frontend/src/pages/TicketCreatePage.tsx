@@ -15,7 +15,7 @@ import './tickets.css';
 export function TicketCreatePage() {
   const navigate = useNavigate();
   const client = useQueryClient();
-  const [values, setValues] = useState<TicketFormValues>({ title: '', customer_email: '', description: '', assignee_id: '', status: 'open' });
+  const [values, setValues] = useState<TicketFormValues>({ title: '', customer_email: '', description: '', assignee_id: '', status: 'open', priority: 'medium' });
   const [errors, setErrors] = useState<FieldErrors>({});
   const agents = useQuery({ queryKey: queryKeys.agents, queryFn: ({ signal }) => api.agents(signal) });
   const create = useMutation({
@@ -55,6 +55,7 @@ export function TicketCreatePage() {
       customer_email: values.customer_email.trim(),
       description: values.description.trim(),
       assignee_id: values.assignee_id || null,
+      priority: values.priority,
     });
   }
 

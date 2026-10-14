@@ -13,7 +13,9 @@ from sqlalchemy.orm import sessionmaker
 
 from app.db import create_database_engine
 from app.integrations.openrouter import OpenRouterClient, get_openrouter
-from app.models import Agent, CopilotCitation, CopilotRun, KnowledgeChunk, KnowledgeDocument, Ticket, TicketEvent
+from app.models import Agent, CopilotCitation, CopilotRun, KnowledgeChunk, KnowledgeDocument, Member, SavedView, SlaPolicy, Ticket, TicketEvent, TicketMessage
+from app.services.members import member_read
+from app.services.sla import DEFAULT_POLICIES
 from tests.guard_database import assert_test_database_urls, load_guarded_settings
 
 PROVIDER_KEY = "test-only-openrouter-key-never-use-live"
@@ -29,7 +31,7 @@ UNRELATED_CONTENT = (
     "Invoices are available from Settings > Billing > Invoices. "
     "Never request a full card number or CVV."
 )
-TABLES = (CopilotCitation, CopilotRun, KnowledgeChunk, KnowledgeDocument, TicketEvent, Ticket, Agent)
+TABLES = (TicketMessage, SavedView, CopilotCitation, CopilotRun, KnowledgeChunk, KnowledgeDocument, TicketEvent, Ticket, Member, Agent)
 
 
 def unit_vector(axis: int = 0, magnitude: float = 1.0) -> list[float]:
@@ -73,9 +75,13 @@ def reset_database(engine, settings) -> None:
     assert_test_database_urls(settings)
     with engine.begin() as connection:
         connection.execute(text(
-            "TRUNCATE TABLE copilot_citations, copilot_runs, knowledge_chunks, "
-            "knowledge_documents, ticket_events, tickets, agents RESTART IDENTITY"
+            "TRUNCATE TABLE ticket_messages, saved_views, members, copilot_citations, copilot_runs, knowledge_chunks, "
+            "knowledge_documents, ticket_events, tickets, agents, sla_policies RESTART IDENTITY"
         ))
+        connection.execute(SlaPolicy.__table__.insert(), [
+            {"priority": priority, "first_response_minutes": response, "resolution_minutes": resolution, "version": 1}
+            for priority, response, resolution in DEFAULT_POLICIES
+        ])
 
 
 @dataclass(frozen=True)
@@ -177,13 +183,15 @@ def provider(settings):
 
 
 @pytest.fixture
-def application(settings, provider, clean_database):
+def application(settings, provider, clean_database, member):
     assert_test_database_urls(settings)
     # Importing app.main creates its module-level app; database settings are guarded first.
     from app.main import create_app
 
+    from app.auth import current_member
     application = create_app(settings)
     application.dependency_overrides[get_openrouter] = lambda: provider.adapter
+    application.dependency_overrides[current_member] = lambda: member
     return application
 
 
@@ -204,6 +212,17 @@ def agents(sessions):
     with sessions.begin() as session:
         session.add_all([Agent(id=UUID(row["id"]), name=row["name"], email=row["email"]) for row in rows])
     return rows
+
+
+@pytest.fixture
+def member(agents, sessions):
+    from uuid import UUID
+    with sessions.begin() as session:
+        account = Member(agent_id=UUID(agents[0]["id"]), name=agents[0]["name"], email=agents[0]["email"],
+                         role="admin", active=True, version=1)
+        session.add(account)
+        session.flush()
+        return member_read(account)
 
 
 @pytest.fixture

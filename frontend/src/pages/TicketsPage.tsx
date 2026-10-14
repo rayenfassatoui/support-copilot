@@ -1,15 +1,21 @@
+import { useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ArrowRight, ChevronLeft, ChevronRight, CircleAlert, Inbox, Plus, RotateCcw, SlidersHorizontal, UserRound } from 'lucide-react';
+import { ArrowRight, ChevronLeft, ChevronRight, CircleAlert, Inbox, Plus, RotateCcw, Search, SlidersHorizontal, UserRound } from 'lucide-react';
 import { api } from '../api';
 import { formatDate, statusLabels, statuses } from '../format';
 import { queryKeys } from '../query';
-import type { TicketFilters, TicketStatus } from '../types';
+import type { Intent, Priority, SavedView, TicketFilters, TicketStatus } from '../types';
 import { IntentBadge, PriorityBadge, StatusBadge } from '../components/Badges';
 import { EmptyState, ErrorNotice, Loading } from '../components/Feedback';
 import { Avatar } from '../components/Avatar';
 import { PageHeader } from '../components/PageHeader';
+import { SavedViews } from '../components/SavedViews';
 import './tickets.css';
+import './workspace.css';
+
+const priorities: Priority[] = ['low', 'medium', 'high', 'urgent'];
+const intents: Intent[] = ['billing', 'technical', 'account', 'cancellation', 'security', 'other'];
 
 export function TicketsPage() {
   const [search, setSearch] = useSearchParams();
@@ -20,7 +26,21 @@ export function TicketsPage() {
   const offset = Number.isSafeInteger(rawOffset) && rawOffset >= 0 ? rawOffset : 0;
   const rawLimit = Number(search.get('limit') ?? 20);
   const limit = [20, 50, 100].includes(rawLimit) ? rawLimit : 20;
-  const filters: TicketFilters = { status, assignee_id: assignee, limit, offset };
+  const rawPriority = search.get('priority') as Priority | null;
+  const rawIntent = search.get('intent') as Intent | null;
+  const rawAssignment = search.get('assignment');
+  const rawSort = search.get('sort');
+  const filters: TicketFilters = {
+    status, assignee_id: assignee, limit, offset,
+    assignment: !assignee && (rawAssignment === 'mine' || rawAssignment === 'unassigned') ? rawAssignment : 'all',
+    priority: rawPriority && priorities.includes(rawPriority) ? rawPriority : undefined,
+    intent: rawIntent && intents.includes(rawIntent) ? rawIntent : undefined,
+    q: search.get('q') ?? '',
+    sla: search.get('sla') === 'breached' ? 'breached' : 'all',
+    sort: rawSort === 'priority' || rawSort === 'due' ? rawSort : 'updated',
+  };
+  const filtered = Boolean(status || assignee || filters.assignment !== 'all' || filters.priority || filters.intent || filters.q || filters.sla !== 'all');
+  const sortLabel = filters.sort === 'due' ? 'Earliest outstanding deadline first' : filters.sort === 'priority' ? 'Urgent priority first' : 'Recently updated first';
   const tickets = useQuery({ queryKey: queryKeys.tickets(filters), queryFn: ({ signal }) => api.tickets(filters, signal) });
   const agents = useQuery({ queryKey: queryKeys.agents, queryFn: ({ signal }) => api.agents(signal) });
 
@@ -41,6 +61,22 @@ export function TicketsPage() {
     });
   }
 
+  function changeAssignment(value: string) {
+    setSearch(current => {
+      const next = new URLSearchParams(current);
+      next.delete('offset'); next.delete('assignee_id'); next.delete('assignment');
+      if (value === 'mine' || value === 'unassigned') next.set('assignment', value);
+      else if (value) next.set('assignee_id', value);
+      return next;
+    });
+  }
+
+  function applyView(view: SavedView) {
+    const next = new URLSearchParams({ view: view.id });
+    for (const [key, value] of Object.entries(view.filters)) if (value !== undefined && value !== null && value !== '') next.set(key, String(value));
+    setSearch(next);
+  }
+
   return (
     <div className="ticket-queue-page">
       <PageHeader
@@ -57,12 +93,22 @@ export function TicketsPage() {
             </button>
           ))}
         </div>
+        <div className="queue-advanced">
+          <SavedViews filters={filters} selectedId={search.get('view')} onApply={applyView} onClearSelection={() => setSearch(current => { const next = new URLSearchParams(current); next.delete('view'); return next; })} />
+          <TicketSearch key={filters.q} query={filters.q ?? ''} onSearch={value => changeFilter('q', value)} />
+          <div className="queue-extra-filters">
+            <div className="field"><label htmlFor="filter-priority">Priority</label><select id="filter-priority" value={filters.priority ?? ''} onChange={event => changeFilter('priority', event.target.value)}><option value="">All priorities</option>{priorities.map(value => <option key={value} value={value}>{value[0].toUpperCase() + value.slice(1)}</option>)}</select></div>
+            <div className="field"><label htmlFor="filter-intent">Latest AI intent</label><select id="filter-intent" value={filters.intent ?? ''} onChange={event => changeFilter('intent', event.target.value)}><option value="">All intents</option>{intents.map(value => <option key={value} value={value}>{value[0].toUpperCase() + value.slice(1)}</option>)}</select></div>
+            <div className="field"><label htmlFor="filter-sla">Service level</label><select id="filter-sla" value={filters.sla} onChange={event => changeFilter('sla', event.target.value)}><option value="all">All targets</option><option value="breached">Outstanding overdue</option></select></div>
+            <div className="field"><label htmlFor="filter-sort">Order by</label><select id="filter-sort" value={filters.sort} onChange={event => changeFilter('sort', event.target.value)}><option value="updated">Recently updated</option><option value="priority">Highest priority</option><option value="due">Next deadline</option></select></div>
+          </div>
+        </div>
         <div className="queue-toolbar">
           <span className="queue-filter-heading"><SlidersHorizontal size={15} aria-hidden="true" />Filter by</span>
           <div className="field queue-agent-filter">
             <label htmlFor="filter-agent">Assigned agent</label>
-            <select id="filter-agent" value={assignee ?? ''} onChange={(event) => changeFilter('assignee_id', event.target.value)} disabled={agents.isPending || agents.isError}>
-              <option value="">All agents</option>
+            <select id="filter-agent" value={assignee ?? (filters.assignment === 'all' ? '' : filters.assignment)} onChange={(event) => changeAssignment(event.target.value)} disabled={agents.isPending || agents.isError}>
+              <option value="">All agents</option><option value="mine">Assigned to me</option><option value="unassigned">Unassigned</option>
               {assignee && !agents.data?.some((agent) => agent.id === assignee) && <option value={assignee}>Selected agent</option>}
               {agents.data?.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
             </select>
@@ -73,7 +119,7 @@ export function TicketsPage() {
               {[20, 50, 100].map((value) => <option key={value} value={value}>{value}</option>)}
             </select>
           </div>
-          {(status || assignee) && <button type="button" className="button button-quiet queue-clear" onClick={() => setSearch({ limit: String(limit) })}><RotateCcw size={14} aria-hidden="true" />Clear filters</button>}
+          {filtered && <button type="button" className="button button-quiet queue-clear" onClick={() => setSearch({ limit: String(limit) })}><RotateCcw size={14} aria-hidden="true" />Clear filters</button>}
         </div>
         <div className="queue-feedback">
           <ErrorNotice error={agents.error} onRetry={() => { void agents.refetch(); }} retrying={agents.isFetching} />
@@ -83,18 +129,18 @@ export function TicketsPage() {
         {tickets.data && <>
           <div className="queue-summary">
             <p className="metadata" role="status">{tickets.data.total === 0 ? '0 tickets' : tickets.data.items.length ? `${offset + 1}–${offset + tickets.data.items.length} of ${tickets.data.total} tickets` : `${tickets.data.total} tickets; no results on this page`}</p>
-            {tickets.isFetching ? <span className="metadata" role="status">Refreshing…</span> : <span className="queue-sort-note">Recently updated first</span>}
+            {tickets.isFetching ? <span className="metadata" role="status">Refreshing…</span> : <span className="queue-sort-note">{sortLabel}</span>}
           </div>
           {tickets.data.items.length === 0
             ? <div className="queue-empty">
               <Inbox size={29} strokeWidth={1.4} aria-hidden="true" />
-              <EmptyState title={offset > 0 ? 'No tickets on this page' : status || assignee ? 'No matching tickets' : 'Your queue starts here'}>
-                <p>{offset > 0 ? 'Go back to the previous page to see tickets.' : status || assignee ? 'Try another status or agent to find the request you need.' : 'Create your first customer request, then review it with Copilot.'}</p>
-                {!status && !assignee && offset === 0 && <Link className="button button-secondary" to="/tickets/new"><Plus size={16} aria-hidden="true" />Create the first ticket</Link>}
+              <EmptyState title={offset > 0 ? 'No tickets on this page' : filtered ? 'No matching tickets' : 'Your queue starts here'}>
+                <p>{offset > 0 ? 'Go back to the previous page to see tickets.' : filtered ? 'Adjust the search or filters to find the request you need.' : 'Create your first customer request, then review it with Copilot.'}</p>
+                {!filtered && offset === 0 && <Link className="button button-secondary" to="/tickets/new"><Plus size={16} aria-hidden="true" />Create the first ticket</Link>}
               </EmptyState>
             </div>
             : <table className="queue-table" role="table">
-              <caption className="sr-only">Tickets ordered by most recently updated</caption>
+              <caption className="sr-only">Tickets · {sortLabel}</caption>
               <thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Ticket</th><th scope="col" role="columnheader">Status</th><th scope="col" role="columnheader">Assigned agent</th><th scope="col" role="columnheader">Intent</th><th scope="col" role="columnheader">Priority</th><th scope="col" role="columnheader">Updated</th></tr></thead>
               <tbody role="rowgroup">{tickets.data.items.map((ticket) => <tr key={ticket.id} role="row">
                 <td className="queue-ticket-cell" role="cell">
@@ -113,7 +159,8 @@ export function TicketsPage() {
                 </td>
                 <td role="cell">
                   <span className="queue-cell-label" aria-hidden="true">Priority</span>
-                  {ticket.latest_analysis ? <div className="queue-analysis"><PriorityBadge priority={ticket.latest_analysis.priority} />{ticket.latest_analysis.escalation_recommended && <span className="queue-advice-note queue-escalation"><CircleAlert size={12} aria-hidden="true" />Escalation advised</span>}</div> : <span className="muted">Not assessed</span>}
+                  <div className="queue-analysis"><PriorityBadge priority={ticket.priority} />{ticket.latest_analysis?.escalation_recommended && <span className="queue-advice-note queue-escalation"><CircleAlert size={12} aria-hidden="true" />Escalation advised</span>}</div>
+                  <span className={`queue-sla-caption${Object.values(ticket.sla).some(target => !target.completed_at && target.status === 'breached') ? ' sla-overdue' : ''}`}>{Object.values(ticket.sla).some(target => !target.completed_at && target.status === 'breached') ? 'Overdue target' : ticket.sla.first_response.completed_at && ticket.sla.resolution.completed_at ? 'Targets completed' : 'Targets on track'}</span>
                 </td>
                 <td className="queue-date-cell" role="cell"><span className="queue-cell-label" aria-hidden="true">Updated</span><time dateTime={ticket.updated_at} title={ticket.updated_at}>{formatDate(ticket.updated_at)}</time></td>
               </tr>)}</tbody>
@@ -128,4 +175,10 @@ export function TicketsPage() {
       <p className="queue-review-note"><ArrowRight size={14} aria-hidden="true" />Open a ticket to review its advice, sources, and activity.</p>
     </div>
   );
+}
+
+function TicketSearch({ query, onSearch }: { query: string; onSearch: (query: string) => void }) {
+  const [value, setValue] = useState(query);
+  function submit(event: FormEvent) { event.preventDefault(); onSearch(value.trim()); }
+  return <form className="queue-search" role="search" onSubmit={submit}><div className="field"><label htmlFor="ticket-search">Search title, request or customer email</label><input id="ticket-search" type="search" value={value} onChange={event => setValue(event.target.value)} maxLength={200} /></div><button className="button button-secondary"><Search size={16} aria-hidden="true" />Search</button></form>;
 }

@@ -15,6 +15,28 @@ export interface Agent {
   email: string;
 }
 
+export interface Member extends Agent {
+  agent_id: string;
+  role: 'admin' | 'agent';
+  active: boolean;
+  version: number;
+  registered: boolean;
+  created_at: string;
+}
+
+export interface SlaTarget {
+  due_at: string;
+  completed_at: string | null;
+  status: 'on_track' | 'met' | 'breached';
+}
+
+export interface SlaPolicy {
+  priority: Priority;
+  first_response_minutes: number;
+  resolution_minutes: number;
+  version: number;
+}
+
 export interface Citation {
   chunk_id: string;
   document_id: string;
@@ -56,6 +78,8 @@ export interface TicketFields {
   created_at: string;
   updated_at: string;
   assignee: Agent | null;
+  priority: Priority;
+  sla: { first_response: SlaTarget; resolution: SlaTarget };
 }
 
 export interface Ticket extends TicketFields {
@@ -78,6 +102,12 @@ export interface TicketPage {
 export interface TicketFilters {
   status?: TicketStatus;
   assignee_id?: string;
+  assignment?: 'all' | 'mine' | 'unassigned';
+  priority?: Priority;
+  intent?: Intent;
+  q?: string;
+  sla?: 'all' | 'breached';
+  sort?: 'updated' | 'priority' | 'due';
   limit: number;
   offset: number;
 }
@@ -87,6 +117,7 @@ export interface TicketCreate {
   description: string;
   customer_email: string;
   assignee_id?: string | null;
+  priority?: Priority;
 }
 
 export interface TicketPatch {
@@ -96,6 +127,7 @@ export interface TicketPatch {
   customer_email?: string;
   status?: TicketStatus;
   assignee_id?: string | null;
+  priority?: Priority;
 }
 
 export interface TicketEvent {
@@ -104,6 +136,7 @@ export interface TicketEvent {
   ticket_version: number;
   changes: Record<string, { old: unknown; new: unknown }>;
   created_at: string;
+  actor: { id: string; name: string } | null;
 }
 
 export interface KnowledgeSummary {
@@ -125,3 +158,41 @@ export interface KnowledgeCreate {
 }
 
 export type FieldErrors = Record<string, string>;
+
+export interface SavedView {
+  id: string;
+  name: string;
+  filters: Omit<TicketFilters, 'offset'>;
+  version: number;
+  created_at: string;
+}
+
+export type MessageKind = 'customer' | 'note' | 'reply';
+export type DeliveryStatus = 'not_applicable' | 'draft' | 'approved' | 'sending' | 'sent' | 'failed' | 'unknown';
+
+export interface TicketMessage {
+  id: string;
+  ticket_id: string;
+  kind: MessageKind;
+  body: string;
+  author: { id: string; name: string };
+  source_run_id: string | null;
+  ticket_version: number;
+  version: number;
+  delivery_status: DeliveryStatus;
+  approved_by: { id: string; name: string } | null;
+  approved_at: string | null;
+  recipient_email: string | null;
+  subject: string | null;
+  smtp_message_id: string | null;
+  delivery_error: string | null;
+  sent_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DeliveryConfiguration {
+  configured: boolean;
+  mode: 'mailpit' | 'smtp';
+  mailpit_url: string | null;
+}

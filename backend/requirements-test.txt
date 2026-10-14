@@ -20,11 +20,17 @@ certifi==2026.7.22
     #   -r backend/requirements.txt
     #   httpcore
     #   httpx
+cffi==2.1.1
+    # via
+    #   -r backend/requirements.txt
+    #   cryptography
 click==8.5.0
     # via
     #   -r backend/requirements.txt
     #   huggingface-hub
     #   uvicorn
+cryptography==50.0.2
+    # via -r backend/requirements.txt
 dnspython==2.9.0
     # via
     #   -r backend/requirements.txt
@@ -95,6 +101,10 @@ psycopg==3.3.6
     # via -r backend/requirements.txt
 psycopg-binary==3.3.6
     # via -r backend/requirements.txt
+pycparser==3.11
+    # via
+    #   -r backend/requirements.txt
+    #   cffi
 pydantic==2.14.1
     # via
     #   -r backend/requirements.txt
@@ -108,6 +118,8 @@ pydantic-settings==2.15.0
     # via -r backend/requirements.txt
 pygments==2.21.0
     # via pytest
+pyjwt==2.15.1
+    # via -r backend/requirements.txt
 pytest==9.1.1
     # via -r backend/requirements-test.in
 python-dotenv==1.2.4

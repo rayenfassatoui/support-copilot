@@ -7,7 +7,8 @@ import type { Agent, TicketStatus } from '../types';
 import { ErrorNotice, Loading } from './Feedback';
 
 const fieldLabels: Record<string, string> = {
-  title: 'Title', description: 'Description', customer_email: 'Customer email', status: 'Status', assignee_id: 'Assigned agent',
+  title: 'Title', description: 'Description', customer_email: 'Customer email', status: 'Status', assignee_id: 'Assigned agent', priority: 'Priority',
+  customer_message: 'Customer message recorded', internal_note: 'Internal note added', reply_approved: 'Reply approved', reply_sent: 'Reply sent',
 };
 
 function eventValue(field: string, value: unknown, agents: Agent[]): string {
@@ -51,6 +52,7 @@ export function TicketTimeline({ ticketId, agents }: { ticketId: string; agents:
                   <span className="ticket-event-version">Version {event.ticket_version}</span>
                 </div>
                 <time className="metadata" dateTime={event.created_at}>{formatDate(event.created_at)}</time>
+                <p className="metadata">{event.actor ? `By ${event.actor.name}` : 'Historical event · actor not recorded'}</p>
                 <details className="ticket-event-details">
                   <summary><span>{event.ticket_version === 1 ? 'View initial values' : `View changes: ${Object.keys(event.changes).map((field) => fieldLabels[field] ?? field).join(', ')}`}</span><ChevronDown size={15} aria-hidden="true" /></summary>
                   <dl className="ticket-event-changes">

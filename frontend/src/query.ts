@@ -14,6 +14,7 @@ export const queryKeys = {
   tickets: (filters: TicketFilters) => ['tickets', 'list', filters] as const,
   ticket: (id: string) => ['tickets', 'detail', id] as const,
   events: (id: string) => ['ticket-events', id] as const,
+  messages: (id: string) => ['ticket-messages', id] as const,
   knowledge: ['knowledge', 'list'] as const,
   document: (id: string) => ['knowledge', 'document', id] as const,
 };
@@ -23,5 +24,6 @@ export async function invalidateTicket(client: QueryClient, id: string): Promise
     client.invalidateQueries({ queryKey: queryKeys.ticket(id) }),
     client.invalidateQueries({ queryKey: queryKeys.ticketLists }),
     client.invalidateQueries({ queryKey: queryKeys.events(id) }),
+    client.invalidateQueries({ queryKey: queryKeys.messages(id) }),
   ]);
 }

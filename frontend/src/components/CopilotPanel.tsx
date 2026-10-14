@@ -7,7 +7,7 @@ import { IntentBadge, PriorityBadge } from './Badges';
 import { SourceDisclosure, SourceLink } from './DocumentContent';
 import { ErrorNotice } from './Feedback';
 
-export function CopilotPanel({ run, stale, blocked, blockedReason, busy, analyzing, escalating, onAnalyze, onEscalate, analyzeError, escalateError, status, onReload }: {
+export function CopilotPanel({ run, stale, blocked, blockedReason, busy, analyzing, escalating, onAnalyze, onEscalate, onUseDraft, analyzeError, escalateError, status, onReload }: {
   run: CopilotRun | null;
   stale: boolean;
   blocked: boolean;
@@ -18,6 +18,7 @@ export function CopilotPanel({ run, stale, blocked, blockedReason, busy, analyzi
   onAnalyze: () => void;
   onEscalate: () => void;
   analyzeError: unknown;
+  onUseDraft: () => void;
   escalateError: unknown;
   status: TicketStatus;
   onReload: () => void;
@@ -160,6 +161,7 @@ export function CopilotPanel({ run, stale, blocked, blockedReason, busy, analyzi
                     <textarea id="manual-copy" className="manual-copy" readOnly rows={10} value={copyText} onFocus={(event) => event.currentTarget.select()} />
                   </div>
                 )}
+                <button type="button" className="button button-secondary button-small" disabled={!canCopy} onClick={onUseDraft}>Review as reply draft</button>
               </section>
 
               <section className="copilot-section copilot-sources-section" aria-labelledby="copilot-sources-heading">

@@ -10,6 +10,8 @@ import type { FieldErrors, Ticket, TicketPatch } from '../types';
 import { Avatar } from '../components/Avatar';
 import { StatusBadge } from '../components/Badges';
 import { CopilotPanel } from '../components/CopilotPanel';
+import { ConversationPanel } from '../components/ConversationPanel';
+import { SlaSummary } from '../components/SlaSummary';
 import { ErrorNotice, Loading } from '../components/Feedback';
 import { PageHeader } from '../components/PageHeader';
 import { TicketFormFields, ticketFormValues, validateTicketForm } from '../components/TicketFormFields';
@@ -23,7 +25,7 @@ interface TicketEditor {
   formVersion: number;
 }
 
-const editableFields: (keyof TicketFormValues)[] = ['title', 'customer_email', 'description', 'assignee_id', 'status'];
+const editableFields: (keyof TicketFormValues)[] = ['title', 'customer_email', 'description', 'assignee_id', 'status', 'priority'];
 
 export function TicketDetailPage() {
   const { id } = useParams();
@@ -96,7 +98,25 @@ function TicketWorkspace({ id }: { id: string }) {
     },
   });
 
-  const busy = save.isPending || analyze.isPending || escalate.isPending || reloading;
+  const [conversationBusy, setConversationBusy] = useState(false);
+  const draft = useMutation({
+    mutationFn: () => {
+      const run = ticket.data?.latest_analysis;
+      if (!ticket.data || !run?.grounded || !run.response_draft || ticket.data.analysis_stale) throw new Error('No current grounded draft is available.');
+      return api.createMessage(id, { kind: 'reply', body: run.response_draft, source_run_id: run.id, ticket_version: ticket.data.version });
+    },
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: queryKeys.messages(id) });
+      setNotice('AI draft added to the conversation. Edit and approve it before sending.');
+      document.getElementById('conversation-heading')?.focus();
+    },
+  });
+  async function conversationChanged() {
+    await invalidateTicket(client, id);
+    const saved = client.getQueryData<Ticket>(queryKeys.ticket(id));
+    if (saved) resetEditor(saved);
+  }
+  const busy = save.isPending || analyze.isPending || escalate.isPending || draft.isPending || conversationBusy || reloading;
   const dirty = Boolean(editor && editableFields.some((field) => editor.values[field] !== editor.baseline[field]));
   const serverChanged = Boolean(editor && ticket.data && ticket.data.version !== editor.formVersion);
   const analysisBlocked = dirty || serverChanged;
@@ -131,6 +151,7 @@ function TicketWorkspace({ id }: { id: string }) {
       description: editor.values.description.trim(),
       assignee_id: editor.values.assignee_id || null,
       status: editor.values.status,
+      priority: editor.values.priority,
     });
   }
 
@@ -217,7 +238,9 @@ function TicketWorkspace({ id }: { id: string }) {
         </dl>
       </header>
 
+      <SlaSummary ticket={savedTicket} />
       <ErrorNotice error={ticket.error} onRetry={() => { void ticket.refetch(); }} retrying={ticket.isFetching} />
+      <ErrorNotice error={draft.error} />
       {notice && <p className="notice notice-success" role="status">{notice}</p>}
       {serverChanged && (
         <div className="notice notice-warning ticket-conflict-notice" role="status">
@@ -231,6 +254,7 @@ function TicketWorkspace({ id }: { id: string }) {
 
       <div className="ticket-detail-layout">
         <div className="panel-stack ticket-primary-column">
+          <ConversationPanel ticket={savedTicket} blocked={analysisBlocked || busy} onChanged={conversationChanged} onBusyChange={setConversationBusy} />
           <section className="panel ticket-editor" aria-labelledby="ticket-edit-heading">
             <div className="ticket-section-header">
               <div>
@@ -264,7 +288,7 @@ function TicketWorkspace({ id }: { id: string }) {
           </section>
           <TicketTimeline ticketId={id} agents={agents.data ?? (savedTicket.assignee ? [savedTicket.assignee] : [])} />
         </div>
-        <CopilotPanel run={savedTicket.latest_analysis} stale={savedTicket.analysis_stale} blocked={analysisBlocked} blockedReason={blockedReason} busy={busy} analyzing={analyze.isPending} escalating={escalate.isPending} onAnalyze={analyzeSavedTicket} onEscalate={escalateSavedTicket} analyzeError={analyze.error} escalateError={escalate.error} status={savedTicket.status} onReload={() => { void reloadLatest(); }} />
+        <CopilotPanel run={savedTicket.latest_analysis} stale={savedTicket.analysis_stale} blocked={analysisBlocked} blockedReason={blockedReason} busy={busy} analyzing={analyze.isPending} escalating={escalate.isPending} onAnalyze={analyzeSavedTicket} onEscalate={escalateSavedTicket} onUseDraft={() => draft.mutate()} analyzeError={analyze.error} escalateError={escalate.error} status={savedTicket.status} onReload={() => { void reloadLatest(); }} />
       </div>
     </div>
   );

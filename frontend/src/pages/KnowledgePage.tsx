@@ -4,6 +4,7 @@ import { Dialog } from '@base-ui/react/dialog';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BookOpen, ChevronRight, FileText, Library, Plus, RefreshCw, Search, X } from 'lucide-react';
 import { ApiError, api } from '../api';
+import { useAuth } from '../auth';
 import { safeHttpUrl } from '../format';
 import { queryKeys } from '../query';
 import type { FieldErrors } from '../types';
@@ -19,6 +20,7 @@ interface KnowledgeForm {
 }
 
 export function KnowledgePage() {
+  const isAdmin = useAuth().member?.role === 'admin';
   const client = useQueryClient();
   const addDocumentRef = useRef<HTMLButtonElement | null>(null);
   const [values, setValues] = useState<KnowledgeForm>({ title: '', source_url: '', content: '' });
@@ -67,7 +69,7 @@ export function KnowledgePage() {
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (index.isPending) return;
+    if (index.isPending || !isAdmin) return;
     const title = values.title.trim();
     const content = values.content.replace(/\r\n/g, '\n').trim();
     const sourceUrl = values.source_url.trim();
@@ -93,7 +95,7 @@ export function KnowledgePage() {
         <PageHeader
           title="Knowledge base"
           description="The original sources behind every supported answer."
-          actions={<Dialog.Trigger ref={addDocumentRef} type="button" className="button"><Plus size={17} aria-hidden="true" />Add document</Dialog.Trigger>}
+          actions={isAdmin ? <Dialog.Trigger ref={addDocumentRef} type="button" className="button"><Plus size={17} aria-hidden="true" />Add document</Dialog.Trigger> : undefined}
         />
         {success && <p className="notice notice-success" role="status">{success}</p>}
         {!dialogOpen && index.isPending && <Loading>Indexing knowledge… You can continue browsing.</Loading>}
@@ -115,7 +117,7 @@ export function KnowledgePage() {
               <ErrorNotice error={knowledge.error} onRetry={() => { void knowledge.refetch(); }} retrying={knowledge.isFetching} />
               {knowledge.isPending && <Loading>Loading knowledge…</Loading>}
               {knowledge.isFetching && !knowledge.isPending && <p className="metadata" role="status">Refreshing document list…</p>}
-              {documents?.length === 0 && <EmptyState title="Your library starts here"><p>Add your first document, or ask the demo operator to seed the fictional AcmeCloud policies. Without supporting sources, the copilot will not draft an answer.</p><button type="button" className="button button-secondary" onClick={() => setDialogOpen(true)}><Plus size={16} aria-hidden="true" />Add a document</button></EmptyState>}
+              {documents?.length === 0 && <EmptyState title="Your library starts here"><p>Ask an administrator to add supporting policies. Without supporting sources, the copilot will not draft an answer.</p>{isAdmin && <button type="button" className="button button-secondary" onClick={() => setDialogOpen(true)}><Plus size={16} aria-hidden="true" />Add a document</button>}</EmptyState>}
               {documents && documents.length > 0 && filteredDocuments?.length === 0 && <EmptyState title="No matching documents"><p>Try another title. This filter searches document titles, not their contents.</p><button type="button" className="button button-quiet" onClick={() => setSearch('')}>Clear filter</button></EmptyState>}
             </div>
             {filteredDocuments && filteredDocuments.length > 0 && (

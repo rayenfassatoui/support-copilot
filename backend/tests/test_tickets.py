@@ -52,7 +52,7 @@ def test_create_read_and_fresh_session_persistence(client, ticket_factory, sessi
         assert stored[0].ticket_version == 1
         assert stored[0].changes == {
             field: {"old": None, "new": ticket[field]}
-            for field in ("title", "description", "customer_email", "status", "assignee_id")
+            for field in ("title", "description", "customer_email", "status", "assignee_id", "priority")
         }
     assert provider.calls == []
 

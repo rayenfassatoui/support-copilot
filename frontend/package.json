@@ -11,6 +11,7 @@
   "dependencies": {
     "@base-ui/react": "^1.9.0",
     "@fontsource-variable/manrope": "^5.3.0",
+    "@neondatabase/auth": "^0.6.0-beta",
     "@tanstack/react-query": "^5.90.0",
     "lucide-react": "^1.56.0",
     "react": "^19.2.0",

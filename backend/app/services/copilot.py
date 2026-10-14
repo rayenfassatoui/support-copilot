@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.errors import DomainError
-from app.models import CopilotCitation, CopilotRun, KnowledgeChunk, KnowledgeDocument, Ticket
+from app.models import CopilotCitation, CopilotRun, KnowledgeChunk, KnowledgeDocument, Ticket, TicketMessage
 from app.schemas import CitationRead, CopilotRunRead, EscalationRead, EscalationReason, ModelAnalysis, RetrievedChunk, TicketContext
 
 if TYPE_CHECKING:
@@ -90,7 +90,18 @@ def analyze_ticket(sessions: sessionmaker[Session], provider: OpenRouterClient,
             raise DomainError("not_found")
         if ticket.version != version:
             raise DomainError("ticket_conflict")
-        snapshot = TicketContext(id=ticket.id, title=ticket.title, description=ticket.description, version=ticket.version)
+        messages = session.execute(
+            select(TicketMessage.kind, TicketMessage.body)
+            .where(TicketMessage.ticket_id == ticket.id,
+                   (TicketMessage.kind == "customer") | ((TicketMessage.kind == "reply") & (TicketMessage.delivery_status == "sent")))
+            .order_by(TicketMessage.created_at, TicketMessage.id)
+        ).all()
+        description = ticket.description
+        if messages:
+            description += "\n\nConversation:\n" + "\n\n".join(
+                f"{'Customer' if kind == 'customer' else 'Agent reply'}: {body}" for kind, body in messages
+            )
+        snapshot = TicketContext(id=ticket.id, title=ticket.title, description=description, version=ticket.version)
     provider.require_key()
     chunks = retrieve(sessions, provider, snapshot.title + "\n" + snapshot.description)
     result = provider.analyze(snapshot, chunks)
